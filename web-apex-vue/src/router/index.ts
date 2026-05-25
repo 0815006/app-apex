@@ -19,6 +19,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/WikiManager.vue'),
         meta: { title: 'Wiki' },
       },
+      {
+        path: 'chat',
+        name: 'Chat',
+        component: () => import('@/views/ChatView.vue'),
+        meta: { title: 'AI 聊天' },
+      },
     ],
   },
   {

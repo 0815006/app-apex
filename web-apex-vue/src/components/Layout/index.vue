@@ -11,7 +11,7 @@
     </header>
 
     <!-- 主视图 -->
-    <main :class="['layout-main', { 'layout-main--no-padding': isWikiRoute }]">
+    <main :class="['layout-main', { 'layout-main--no-padding': isFullHeightRoute }]">
       <router-view />
     </main>
 
@@ -30,7 +30,7 @@ import Sidebar from './Sidebar.vue'
 import StatusBar from './StatusBar.vue'
 
 const route = useRoute()
-const isWikiRoute = computed(() => route.path.startsWith('/wiki'))
+const isFullHeightRoute = computed(() => route.path.startsWith('/wiki') || route.path.startsWith('/chat'))
 </script>
 
 <style scoped>

@@ -18,6 +18,10 @@
         <el-icon><Collection /></el-icon>
         <span>Wiki</span>
       </el-menu-item>
+      <el-menu-item index="/chat">
+        <el-icon><ChatDotRound /></el-icon>
+        <span>AI 聊天</span>
+      </el-menu-item>
     </el-menu>
   </div>
 </template>
