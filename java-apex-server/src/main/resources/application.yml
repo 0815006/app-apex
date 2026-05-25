@@ -7,6 +7,9 @@ spring:
   threads:
     virtual:
       enabled: true
+  output:
+    ansi:
+      enabled: always
 
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/apex_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai

@@ -13,6 +13,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Home.vue'),
         meta: { title: '首页' },
       },
+      {
+        path: 'wiki',
+        name: 'Wiki',
+        component: () => import('@/views/WikiManager.vue'),
+        meta: { title: 'Wiki' },
+      },
     ],
   },
   {

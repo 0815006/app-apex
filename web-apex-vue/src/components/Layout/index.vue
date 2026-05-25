@@ -11,7 +11,7 @@
     </header>
 
     <!-- 主视图 -->
-    <main class="layout-main">
+    <main :class="['layout-main', { 'layout-main--no-padding': isWikiRoute }]">
       <router-view />
     </main>
 
@@ -23,9 +23,14 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import Header from './Header.vue'
 import Sidebar from './Sidebar.vue'
 import StatusBar from './StatusBar.vue'
+
+const route = useRoute()
+const isWikiRoute = computed(() => route.path.startsWith('/wiki'))
 </script>
 
 <style scoped>
@@ -59,6 +64,11 @@ import StatusBar from './StatusBar.vue'
   overflow-y: auto;
   padding: 16px;
   background-color: #f5f7fa;
+}
+
+.layout-main--no-padding {
+  padding: 0;
+  overflow: hidden;
 }
 
 .layout-footer {
