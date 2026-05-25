@@ -1,0 +1,45 @@
+# ===== Java / Maven (java-apex-server) =====
+java-apex-server/target/
+java-apex-server/*.class
+java-apex-server/*.jar
+java-apex-server/*.war
+java-apex-server/*.ear
+
+# ===== Maven Wrapper =====
+java-apex-server/.mvn/wrapper/maven-wrapper.properties
+
+# ===== Java Logs =====
+java-apex-server/logs/
+java-apex-server/*.log
+
+# ===== Node / npm (web-apex-vue) =====
+web-apex-vue/node_modules/
+web-apex-vue/dist/
+web-apex-vue/*.tsbuildinfo
+
+# ===== Vite Cache =====
+web-apex-vue/.vite/
+
+# ===== Frontend Logs =====
+web-apex-vue/*.log
+web-apex-vue/npm-debug.log*
+
+# ===== Docker =====
+docker/data/
+
+# ===== Environment =====
+.env
+.env.production
+.env.local
+
+# ===== IDE =====
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+Desktop.ini

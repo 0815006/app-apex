@@ -1,0 +1,3 @@
+-- Flyway 初始化迁移脚本
+-- 此目录存放所有数据库版本迁移 SQL 文件
+-- 命名格式: V{version}__{description}.sql，例如 V1__init_schema.sql
