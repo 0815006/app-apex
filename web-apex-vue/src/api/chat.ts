@@ -75,6 +75,25 @@ export function sendChatMessage(
     'X-Emp-No': localStorage.getItem('apex_current_emp_no') || '0000000',
   }
 
+  // 流读取超时（60 秒无数据则自动断开）
+  let streamTimeout: ReturnType<typeof setTimeout> | null = null
+  const READ_TIMEOUT_MS = 60_000
+
+  function resetTimeout() {
+    if (streamTimeout) clearTimeout(streamTimeout)
+    streamTimeout = setTimeout(() => {
+      controller.abort()
+      onError('流式响应超时，长时间未收到数据')
+    }, READ_TIMEOUT_MS)
+  }
+
+  function stopTimeout() {
+    if (streamTimeout) {
+      clearTimeout(streamTimeout)
+      streamTimeout = null
+    }
+  }
+
   fetch(url, {
     method: 'POST',
     headers,
@@ -92,11 +111,23 @@ export function sendChatMessage(
     }
     const decoder = new TextDecoder()
     let buffer = ''
+    resetTimeout()
 
     // SSE 逐行解析状态机
     let currentEvent = ''
     let currentData = ''
-    let hasData = false  // 关键：标记是否至少收到过 data: 行
+    let hasData = false
+    let eventStarted = false // 是否已经开始收到过有效 SSE 事件
+
+    function parseField(line: string): { field: string; value: string } | null {
+      const colonIdx = line.indexOf(':')
+      if (colonIdx === -1) return null
+      const field = line.substring(0, colonIdx)
+      // SSE spec: 冒号后可选一个空格，跳过之
+      let value = line.substring(colonIdx + 1)
+      if (value.startsWith(' ')) value = value.substring(1)
+      return { field, value }
+    }
 
     function dispatchEvent(event: string, data: string) {
       if (event === 'reasoning') {
@@ -118,41 +149,57 @@ export function sendChatMessage(
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
+      resetTimeout()
       buffer += decoder.decode(value, { stream: true })
 
-      // 按 \n 拆行；trimEnd 去除 \r（兼容 \r\n 行尾）
       const parts = buffer.split('\n')
       buffer = parts.pop() || ''
 
       for (const rawLine of parts) {
         const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
 
-        if (line.startsWith('event: ')) {
-          // 如果有未分发的上一事件（例如 data 为空但 event 已设置），跳过
-          // 新事件开始，重置状态
-          currentEvent = line.slice(7).trim()
-          currentData = ''
-          hasData = false
-        } else if (line.startsWith('data: ')) {
-          hasData = true
-          const payload = line.slice(6)
-          currentData += (currentData ? '\n' : '') + payload
-        } else if (line === '' && currentEvent && hasData) {
-          // 空行 = SSE 消息边界；仅在已有事件类型且已收到 data 时触发
-          dispatchEvent(currentEvent, currentData)
+        if (line === '') {
+          // 空行 = SSE 消息边界
+          if (currentEvent && hasData) {
+            dispatchEvent(currentEvent, currentData)
+            eventStarted = true
+          }
           currentEvent = ''
           currentData = ''
           hasData = false
+        } else if (line.startsWith(':')) {
+          // SSE comment，忽略
+          continue
+        } else {
+          const parsed = parseField(line)
+          if (parsed) {
+            if (parsed.field === 'event') {
+              currentEvent = parsed.value
+              currentData = ''
+              hasData = false
+            } else if (parsed.field === 'data') {
+              hasData = true
+              currentData += (currentData ? '\n' : '') + parsed.value
+            }
+            // id:, retry: 等其他 SSE 字段忽略
+          }
         }
-        // 其他行（如 :comment, id: 等 SSE 可选字段）忽略
       }
     }
 
     // 流结束后处理缓冲中残留的最后一条消息
     if (currentEvent && hasData) {
       dispatchEvent(currentEvent, currentData)
+      eventStarted = true
     }
+
+    // 如果流结束但从未收到任何有效 SSE 事件，视为错误
+    if (!eventStarted) {
+      onError('服务器未返回有效响应，请检查模型配置或稍后重试')
+    }
+    stopTimeout()
   }).catch((err) => {
+    stopTimeout()
     if (err.name !== 'AbortError') {
       onError(err.message || '网络异常')
     }

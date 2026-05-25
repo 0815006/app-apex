@@ -232,6 +232,11 @@ public class ChatService {
         SseEmitter emitter = new SseEmitter(300_000L);
         final String finalSessionId = sessionId;
 
+        // 注册生命周期回调
+        emitter.onCompletion(() -> log.info("[{}] SSE 流正常完成: sessionId={}", empNo, finalSessionId));
+        emitter.onTimeout(() -> log.warn("[{}] SSE 流超时: sessionId={}", empNo, finalSessionId));
+        emitter.onError(ex -> log.error("[{}] SSE 流异常: sessionId={}", empNo, finalSessionId, ex));
+
         // 8. 虚拟线程异步执行 LLM 代理转发
         Thread.ofVirtual().start(() -> {
             StringBuilder fullResponse = new StringBuilder();

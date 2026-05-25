@@ -3,10 +3,10 @@ package com.apex.controller;
 import com.apex.common.EmpContext;
 import com.apex.common.Result;
 import com.apex.entity.ChatMessage;
-import com.apex.entity.ChatSession;
 import com.apex.model.ChatRequest;
 import com.apex.model.ChatSessionVO;
 import com.apex.service.ChatService;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -50,12 +50,15 @@ public class ChatController {
      * 如果 sessionId 为空，则自动创建新会话。
      */
     @PostMapping(value = "/send", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter sendMessage(@RequestBody ChatRequest request) {
+    public SseEmitter sendMessage(@RequestBody ChatRequest request, HttpServletResponse response) {
         log.info("[{}] 发送消息: sessionId={}, configId={}, content={}",
                 EmpContext.getEmpNo(),
                 request.sessionId(),
                 request.configId(),
                 request.content().substring(0, Math.min(request.content().length(), 30)));
+        // 防止反向代理缓冲 SSE 流
+        response.setHeader("X-Accel-Buffering", "no");
+        response.setHeader("Cache-Control", "no-cache, no-transform");
         return chatService.sendMessage(
                 request.sessionId(),
                 request.configId(),
