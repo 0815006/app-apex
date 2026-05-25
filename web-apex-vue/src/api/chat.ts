@@ -56,8 +56,7 @@ export function updateSessionTitle(sessionId: string, title: string): Promise<{ 
 
 /**
  * 发送消息（SSE 流式）。
- * 返回 ReadableStream 用于自定义读取 SSE 事件。
- * 不使用 axios，直接用 fetch 读取流。
+ * 不使用 axios，直接用 fetch + ReadableStream 解析 SSE。
  */
 export function sendChatMessage(
   sessionId: string | null,
@@ -65,7 +64,8 @@ export function sendChatMessage(
   content: string,
   onMessage: (chunk: string) => void,
   onDone: (data: { sessionId: string; messageId: string }) => void,
-  onError: (error: string) => void
+  onError: (error: string) => void,
+  onReasoning?: (chunk: string) => void
 ): AbortController {
   const controller = new AbortController()
 
@@ -92,32 +92,65 @@ export function sendChatMessage(
     }
     const decoder = new TextDecoder()
     let buffer = ''
+
+    // SSE 逐行解析状态机
+    let currentEvent = ''
+    let currentData = ''
+    let hasData = false  // 关键：标记是否至少收到过 data: 行
+
+    function dispatchEvent(event: string, data: string) {
+      if (event === 'reasoning') {
+        onReasoning?.(data)
+      } else if (event === 'message') {
+        onMessage(data)
+      } else if (event === 'done') {
+        try {
+          const payload = JSON.parse(data)
+          onDone(payload)
+        } catch {
+          onDone({ sessionId: '', messageId: '' })
+        }
+      } else if (event === 'error') {
+        onError(data)
+      }
+    }
+
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
-      // SSE 格式: event: xxx\ndata: xxx\n\n
-      const lines = buffer.split('\n\n')
-      buffer = lines.pop() || '' // 不完整的部分放回 buffer
-      for (const block of lines) {
-        const eventMatch = block.match(/^event:\s*(.+)$/m)
-        const dataMatch = block.match(/^data:\s*(.+)$/m)
-        if (!eventMatch || !dataMatch) continue
-        const event = eventMatch[1].trim()
-        const data = dataMatch[1].trim()
-        if (event === 'message') {
-          onMessage(data)
-        } else if (event === 'done') {
-          try {
-            const payload = JSON.parse(data)
-            onDone(payload)
-          } catch {
-            onDone({ sessionId: '', messageId: '' })
-          }
-        } else if (event === 'error') {
-          onError(data)
+
+      // 按 \n 拆行；trimEnd 去除 \r（兼容 \r\n 行尾）
+      const parts = buffer.split('\n')
+      buffer = parts.pop() || ''
+
+      for (const rawLine of parts) {
+        const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+
+        if (line.startsWith('event: ')) {
+          // 如果有未分发的上一事件（例如 data 为空但 event 已设置），跳过
+          // 新事件开始，重置状态
+          currentEvent = line.slice(7).trim()
+          currentData = ''
+          hasData = false
+        } else if (line.startsWith('data: ')) {
+          hasData = true
+          const payload = line.slice(6)
+          currentData += (currentData ? '\n' : '') + payload
+        } else if (line === '' && currentEvent && hasData) {
+          // 空行 = SSE 消息边界；仅在已有事件类型且已收到 data 时触发
+          dispatchEvent(currentEvent, currentData)
+          currentEvent = ''
+          currentData = ''
+          hasData = false
         }
+        // 其他行（如 :comment, id: 等 SSE 可选字段）忽略
       }
+    }
+
+    // 流结束后处理缓冲中残留的最后一条消息
+    if (currentEvent && hasData) {
+      dispatchEvent(currentEvent, currentData)
     }
   }).catch((err) => {
     if (err.name !== 'AbortError') {

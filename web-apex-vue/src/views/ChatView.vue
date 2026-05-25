@@ -98,7 +98,18 @@
         <!-- 流式输出中的 AI 消息 -->
         <div v-if="streaming" class="message-row assistant">
           <div class="message-avatar">🤖</div>
-          <div class="message-bubble streaming" v-html="renderMarkdown(streamingContent || '▊')" />
+          <div class="message-body">
+            <!-- 可折叠的思考过程 -->
+            <div v-if="streamingReasoning" class="reasoning-block">
+              <div class="reasoning-header" @click="reasoningExpanded = !reasoningExpanded">
+                <span class="reasoning-icon">{{ reasoningExpanded ? '▼' : '▶' }}</span>
+                <span>思考过程</span>
+                <span v-if="reasoningExpanded" class="reasoning-hint">（可在配置中关闭展示）</span>
+              </div>
+              <div v-if="reasoningExpanded" class="reasoning-content" v-html="renderMarkdown(streamingReasoning)" />
+            </div>
+            <div class="message-bubble streaming" v-html="renderMarkdown(streamingContent || '▊')" />
+          </div>
         </div>
 
         <!-- 滚动锚点 -->
@@ -195,6 +206,7 @@ function handleNewChat() {
   // 停止当前流式
   abortStream()
   streaming.value = false
+  streamingReasoning.value = ''
   currentSessionId.value = null
   messages.value = []
   inputContent.value = ''
@@ -247,6 +259,8 @@ const inputContent = ref('')
 const sending = ref(false)
 const streaming = ref(false)
 const streamingContent = ref('')
+const streamingReasoning = ref('')
+const reasoningExpanded = ref(true)
 const messagesContainer = ref<HTMLElement | null>(null)
 const scrollAnchor = ref<HTMLElement | null>(null)
 let currentAbortController: AbortController | null = null
@@ -310,6 +324,8 @@ async function handleSend() {
   sending.value = true
   streaming.value = true
   streamingContent.value = ''
+  streamingReasoning.value = ''
+  reasoningExpanded.value = true
 
   await nextTick()
   scrollToBottom()
@@ -340,6 +356,7 @@ async function handleSend() {
       })
       streaming.value = false
       streamingContent.value = ''
+      streamingReasoning.value = ''
       sending.value = false
       currentAbortController = null
       // 刷新会话列表（新会话会置顶）
@@ -362,7 +379,13 @@ async function handleSend() {
           createTime: new Date().toISOString(),
         })
         streamingContent.value = ''
+        streamingReasoning.value = ''
       }
+    },
+    // onReasoning
+    (chunk: string) => {
+      streamingReasoning.value += chunk
+      scrollToBottom()
     }
   )
 }
@@ -385,6 +408,7 @@ function handleStop() {
       createTime: new Date().toISOString(),
     })
     streamingContent.value = ''
+    streamingReasoning.value = ''
   }
   streaming.value = false
   sending.value = false
@@ -638,6 +662,71 @@ onMounted(() => {
 .message-bubble.streaming {
   border-color: #409eff;
   box-shadow: 0 0 6px rgba(64, 158, 255, 0.2);
+}
+
+/* 消息体（含思考过程 + 气泡） */
+.message-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 思考过程折叠块 */
+.reasoning-block {
+  margin-bottom: 6px;
+  border: 1px solid #e8d5a0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.reasoning-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background-color: #fef9e7;
+  cursor: pointer;
+  font-size: 12px;
+  color: #8b6914;
+  user-select: none;
+  transition: background-color 0.15s;
+}
+
+.reasoning-header:hover {
+  background-color: #fef3c7;
+}
+
+.reasoning-icon {
+  font-size: 10px;
+  width: 14px;
+  text-align: center;
+}
+
+.reasoning-hint {
+  font-size: 11px;
+  color: #b0a06a;
+  margin-left: auto;
+}
+
+.reasoning-content {
+  padding: 8px 10px;
+  background-color: #fffdf5;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #6b5a1e;
+  border-top: 1px solid #f0e5b0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.reasoning-content :deep(p) {
+  margin: 2px 0;
+}
+
+.reasoning-content :deep(code) {
+  background-color: #f0e5b0;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
 }
 
 /* Markdown 渲染样式 */

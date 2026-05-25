@@ -16,12 +16,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestClient;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,6 +33,7 @@ import java.util.Map;
 /**
  * 聊天核心 Service。
  * 负责会话管理、消息持久化、LLM 代理转发（SSE 流式）。
+ * 使用 JDK HttpClient 实现真正的逐行流式消费，避免代理层缓冲。
  */
 @Slf4j
 @Service
@@ -161,6 +164,8 @@ public class ChatService {
     /**
      * 核心方法：发送消息并获取 LLM 流式响应。
      * 返回 SseEmitter 供前端接收打字机效果。
+     * 使用 JDK HttpClient + BodyHandlers.ofLines() 实现真正的逐行流式消费，
+     * 绝不缓冲整个响应体，确保 SSE 事件实时逐条到达前端。
      *
      * @param sessionId 会话 ID（为 null 时自动创建）
      * @param configId  大模型配置 ID
@@ -231,9 +236,8 @@ public class ChatService {
         Thread.ofVirtual().start(() -> {
             StringBuilder fullResponse = new StringBuilder();
             try {
-                RestClient restClient = RestClient.create();
+                // 拼接请求 URL
                 String apiUrl = config.getApiUrl();
-                // 确保 URL 以 / 结尾没有双斜杠
                 if (apiUrl.endsWith("/")) {
                     apiUrl = apiUrl.substring(0, apiUrl.length() - 1);
                 }
@@ -241,46 +245,70 @@ public class ChatService {
 
                 log.info("[{}] 转发 LLM 请求: url={}, model={}", empNo, chatUrl, config.getModelName());
 
-                restClient.post()
-                        .uri(chatUrl)
+                // === 使用 JDK HttpClient，BodyHandlers.ofLines() 实现逐行流式消费 ===
+                String requestBody = objectMapper.writeValueAsString(llmReq);
+
+                HttpRequest httpRequest = HttpRequest.newBuilder()
+                        .uri(URI.create(chatUrl))
                         .header("Authorization", "Bearer " + config.getApiKey())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(llmReq)
-                        .exchange((request, response) -> {
-                            try (BufferedReader reader = new BufferedReader(
-                                    new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
-                                String line;
-                                while ((line = reader.readLine()) != null) {
-                                    if (line.isEmpty()) continue;
-                                    if (line.startsWith("data: ")) {
-                                        String data = line.substring(6);
-                                        if ("[DONE]".equals(data)) {
-                                            break;
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "text/event-stream")
+                        .timeout(Duration.ofMinutes(5))
+                        .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
+                        .build();
+
+                HttpClient httpClient = HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .build();
+
+                // ofLines() 返回 Stream<String>，逐行惰性读取，绝不缓冲整个 body
+                HttpResponse<java.util.stream.Stream<String>> httpResponse =
+                        httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofLines());
+
+                java.util.stream.Stream<String> lines = httpResponse.body();
+                try (lines) {
+                    java.util.Iterator<String> iterator = lines.iterator();
+                    while (iterator.hasNext()) {
+                        String line = iterator.next();
+                        if (line.isEmpty()) {
+                            continue;
+                        }
+                        if (line.startsWith("data: ")) {
+                            String data = line.substring(6);
+                            if ("[DONE]".equals(data)) {
+                                break;
+                            }
+                            // 解析 JSON 提取 content delta 和 reasoning_content
+                            try {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> jsonMap = objectMapper.readValue(data, Map.class);
+                                var choices = (List<Map<String, Object>>) jsonMap.get("choices");
+                                if (choices != null && !choices.isEmpty()) {
+                                    var delta = (Map<String, Object>) choices.get(0).get("delta");
+                                    if (delta != null) {
+                                        // 思考链（DeepSeek R1 等推理模型）
+                                        if (delta.get("reasoning_content") != null) {
+                                            String reasoning = (String) delta.get("reasoning_content");
+                                            emitter.send(SseEmitter.event()
+                                                    .name("reasoning")
+                                                    .data(reasoning));
                                         }
-                                        // 解析 JSON 提取 content delta
-                                        try {
-                                            @SuppressWarnings("unchecked")
-                                            Map<String, Object> jsonMap = objectMapper.readValue(data, Map.class);
-                                            var choices = (List<Map<String, Object>>) jsonMap.get("choices");
-                                            if (choices != null && !choices.isEmpty()) {
-                                                var delta = (Map<String, Object>) choices.get(0).get("delta");
-                                                if (delta != null && delta.get("content") != null) {
-                                                    String chunk = (String) delta.get("content");
-                                                    fullResponse.append(chunk);
-                                                    // 发送 SSE 事件给前端
-                                                    emitter.send(SseEmitter.event()
-                                                            .name("message")
-                                                            .data(chunk));
-                                                }
-                                            }
-                                        } catch (Exception parseEx) {
-                                            log.warn("解析 LLM 响应 JSON 失败: {}", parseEx.getMessage());
+                                        // 正文内容
+                                        if (delta.get("content") != null) {
+                                            String chunk = (String) delta.get("content");
+                                            fullResponse.append(chunk);
+                                            emitter.send(SseEmitter.event()
+                                                    .name("message")
+                                                    .data(chunk));
                                         }
                                     }
                                 }
+                            } catch (Exception parseEx) {
+                                log.warn("解析 LLM 响应 JSON 失败: {}", parseEx.getMessage());
                             }
-                            return null;
-                        });
+                        }
+                    }
+                }
 
                 log.info("[{}] LLM 响应完成，总长度: {}", empNo, fullResponse.length());
 
