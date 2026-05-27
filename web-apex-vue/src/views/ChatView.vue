@@ -118,15 +118,73 @@
 
       <!-- 底部：输入框 -->
       <footer class="chat-input-area">
-        <el-input
-          v-model="inputContent"
-          type="textarea"
-          :rows="3"
-          placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-          resize="none"
-          :disabled="!selectedConfigId || sending"
-          @keydown.enter.exact="handleSend"
-        />
+        <div class="input-row">
+          <!-- Skill 选择按钮 + 已选 Skill 标签 -->
+          <el-popover
+            placement="top-start"
+            :width="260"
+            trigger="click"
+            :visible="skillPopoverVisible"
+            @show="loadSkills"
+          >
+            <template #reference>
+              <el-badge :is-dot="!!selectedSkillId" class="skill-badge">
+                <el-button
+                  :icon="Plus"
+                  circle
+                  size="small"
+                  class="skill-add-btn"
+                  :title="selectedSkillId ? `当前 Skill: ${selectedSkillName}` : '选择 Skill'"
+                  @click="skillPopoverVisible = !skillPopoverVisible"
+                />
+              </el-badge>
+            </template>
+            <div class="skill-popover-content">
+              <div v-if="skillLoading" class="skill-loading">加载中...</div>
+              <div v-else-if="enabledSkills.length === 0" class="skill-empty">
+                暂无可用 Skill，请先去 <router-link to="/skills">Skill 管理</router-link> 创建
+              </div>
+              <div
+                v-for="skill in enabledSkills"
+                :key="skill.id"
+                :class="['skill-option', { selected: selectedSkillId === skill.id }]"
+                @click="handleSelectSkill(skill)"
+              >
+                <div class="skill-option-name">{{ skill.name }}</div>
+                <div class="skill-option-desc">{{ skill.description || '暂无简介' }}</div>
+              </div>
+              <div v-if="selectedSkillId" class="skill-clear-row">
+                <el-button link size="small" type="danger" @click="handleClearSkill">
+                  移除已选 Skill
+                </el-button>
+              </div>
+            </div>
+          </el-popover>
+
+          <!-- 已选 Skill 标签提示 -->
+          <span v-if="selectedSkillId && !skillPopoverVisible" class="skill-tag-hint">
+            <el-tag
+              type="success"
+              size="small"
+              closable
+              @close="handleClearSkill"
+              effect="dark"
+            >
+              {{ selectedSkillName }}
+            </el-tag>
+          </span>
+
+          <el-input
+            v-model="inputContent"
+            type="textarea"
+            :rows="3"
+            :placeholder="selectedSkillId ? `【${selectedSkillName}】输入消息，Enter 发送，Shift+Enter 换行` : '输入消息，Enter 发送，Shift+Enter 换行'"
+            resize="none"
+            :disabled="!selectedConfigId || sending"
+            @keydown.enter.exact="handleSend"
+            class="input-textarea"
+          />
+        </div>
         <div class="input-actions">
           <span v-if="streaming" class="streaming-hint">AI 正在思考中…</span>
           <el-button
@@ -166,7 +224,9 @@ import {
   deleteSession,
   sendChatMessage,
 } from '@/api/chat'
+import { listEnabledSkills } from '@/api/skill'
 import type { ChatSessionVO, ChatMessage, LlmConfigVO } from '@/types/chat'
+import type { SkillVO } from '@/types/skill'
 import LlmConfigDialog from '@/components/chat/LlmConfigDialog.vue'
 import { listLlmConfigs } from '@/api/chat'
 
@@ -253,6 +313,38 @@ function handleConfigChange() {
   }
 }
 
+// ========== Skill 选择 ==========
+const enabledSkills = ref<SkillVO[]>([])
+const skillLoading = ref(false)
+const selectedSkillId = ref<string | null>(null)
+const selectedSkillName = ref<string>('')
+const skillPopoverVisible = ref(false)
+
+async function loadSkills() {
+  if (enabledSkills.value.length > 0 && !skillLoading.value) return
+  skillLoading.value = true
+  try {
+    const res = await listEnabledSkills()
+    if (res.code === 200) {
+      enabledSkills.value = res.data
+    }
+  } finally {
+    skillLoading.value = false
+  }
+}
+
+function handleSelectSkill(skill: SkillVO) {
+  selectedSkillId.value = skill.id
+  selectedSkillName.value = skill.name
+  skillPopoverVisible.value = false
+  ElMessage.success(`已选择 Skill：${skill.name}`)
+}
+
+function handleClearSkill() {
+  selectedSkillId.value = null
+  selectedSkillName.value = ''
+}
+
 // ========== 消息相关 ==========
 const messages = ref<Array<ChatMessage & { _local?: boolean }>>([])
 const inputContent = ref('')
@@ -330,7 +422,7 @@ async function handleSend() {
   await nextTick()
   scrollToBottom()
 
-  // 发起 SSE 请求
+  // 发起 SSE 请求（携带 skillId）
   currentAbortController = sendChatMessage(
     currentSessionId.value,
     selectedConfigId.value,
@@ -386,7 +478,9 @@ async function handleSend() {
     (chunk: string) => {
       streamingReasoning.value += chunk
       scrollToBottom()
-    }
+    },
+    // skillId
+    selectedSkillId.value
   )
 }
 
@@ -795,8 +889,97 @@ onMounted(() => {
   background-color: #fff;
 }
 
+.input-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.skill-badge {
+  margin-top: 6px;
+}
+
+.skill-add-btn {
+  color: #909399;
+  border-color: #dcdfe6;
+  transition: all 0.2s;
+}
+
+.skill-add-btn:hover {
+  color: #409eff;
+  border-color: #409eff;
+  background-color: #ecf5ff;
+}
+
+/* 已选 Skill 标签提示 */
+.skill-tag-hint {
+  margin-top: 8px;
+  flex-shrink: 0;
+}
+
+.input-textarea {
+  flex: 1;
+}
+
 .chat-input-area :deep(.el-textarea__inner) {
   border-radius: 8px;
+}
+
+/* Skill Popover 内容 */
+.skill-popover-content {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.skill-loading,
+.skill-empty {
+  text-align: center;
+  padding: 16px;
+  color: #909399;
+  font-size: 13px;
+}
+
+.skill-option {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  margin-bottom: 2px;
+}
+
+.skill-option:hover {
+  background-color: #f0f2f5;
+}
+
+.skill-option.selected {
+  background-color: #ecf5ff;
+  border: 1px solid #c6e2ff;
+}
+
+.skill-option-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #303133;
+}
+
+.skill-option.selected .skill-option-name {
+  color: #409eff;
+}
+
+.skill-option-desc {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-clear-row {
+  text-align: center;
+  padding-top: 8px;
+  border-top: 1px solid #e4e7ed;
+  margin-top: 4px;
 }
 
 .input-actions {

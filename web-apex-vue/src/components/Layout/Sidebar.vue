@@ -26,6 +26,10 @@
         <el-icon><ChatDotRound /></el-icon>
         <span>AI 聊天</span>
       </el-menu-item>
+      <el-menu-item index="/skills">
+        <el-icon><MagicStick /></el-icon>
+        <span>Skill</span>
+      </el-menu-item>
     </el-menu>
   </div>
 </template>

@@ -6,5 +6,6 @@ package com.apex.model;
 public record ChatRequest(
         String sessionId,
         String configId,
-        String content
+        String content,
+        String skillId
 ) {}

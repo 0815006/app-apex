@@ -31,6 +31,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/ChatView.vue'),
         meta: { title: 'AI 聊天' },
       },
+      {
+        path: 'skills',
+        name: 'SkillManager',
+        component: () => import('@/views/SkillManager.vue'),
+        meta: { title: 'Skill 管理' },
+      },
     ],
   },
   {

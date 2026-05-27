@@ -2,9 +2,11 @@ package com.apex.service;
 
 import com.apex.common.BusinessException;
 import com.apex.common.EmpContext;
+import com.apex.entity.AiSkill;
 import com.apex.entity.ChatMessage;
 import com.apex.entity.ChatSession;
 import com.apex.entity.LlmConfig;
+import com.apex.mapper.AiSkillMapper;
 import com.apex.mapper.ChatMessageMapper;
 import com.apex.mapper.ChatSessionMapper;
 import com.apex.model.ChatSessionVO;
@@ -43,6 +45,7 @@ public class ChatService {
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
     private final LlmService llmService;
+    private final AiSkillMapper aiSkillMapper;
     private final ObjectMapper objectMapper;
 
     /**
@@ -170,9 +173,10 @@ public class ChatService {
      * @param sessionId 会话 ID（为 null 时自动创建）
      * @param configId  大模型配置 ID
      * @param content   用户消息内容
+     * @param skillId   可选：选择的 Skill ID
      * @return SseEmitter
      */
-    public SseEmitter sendMessage(String sessionId, String configId, String content) {
+    public SseEmitter sendMessage(String sessionId, String configId, String content, String skillId) {
         String empNo = EmpContext.getEmpNo();
 
         // 1. 校验配置归属
@@ -216,7 +220,17 @@ public class ChatService {
                         .orderByAsc(ChatMessage::getCreateTime)
         );
 
-        // 6. 构建 LLM 请求
+        // 6. 查询 Skill system_prompt（若指定了 skillId）
+        String systemPrompt = null;
+        if (skillId != null && !skillId.isBlank()) {
+            AiSkill skill = aiSkillMapper.selectById(skillId);
+            if (skill != null && skill.getStatus() == 1 && skill.getSystemPrompt() != null) {
+                systemPrompt = skill.getSystemPrompt();
+                log.info("[{}] 使用 Skill: name={}, type={}", empNo, skill.getName(), skill.getType());
+            }
+        }
+
+        // 7. 构建 LLM 请求
         List<Map<String, String>> historyMaps = history.stream()
                 .filter(m -> !m.getId().equals(userMsg.getId())) // 去除刚插入的用户消息，避免重复
                 .map(m -> {
@@ -226,9 +240,9 @@ public class ChatService {
                     return map;
                 })
                 .toList();
-        LlmRequest llmReq = LlmRequest.of(config.getModelName(), historyMaps, content);
+        LlmRequest llmReq = LlmRequest.of(config.getModelName(), systemPrompt, historyMaps, content);
 
-        // 7. 创建 SseEmitter（超时 5 分钟）
+        // 8. 创建 SseEmitter（超时 5 分钟）
         SseEmitter emitter = new SseEmitter(300_000L);
         final String finalSessionId = sessionId;
 
@@ -237,7 +251,7 @@ public class ChatService {
         emitter.onTimeout(() -> log.warn("[{}] SSE 流超时: sessionId={}", empNo, finalSessionId));
         emitter.onError(ex -> log.error("[{}] SSE 流异常: sessionId={}", empNo, finalSessionId, ex));
 
-        // 8. 虚拟线程异步执行 LLM 代理转发
+        // 9. 虚拟线程异步执行 LLM 代理转发
         Thread.ofVirtual().start(() -> {
             StringBuilder fullResponse = new StringBuilder();
             try {
@@ -317,7 +331,7 @@ public class ChatService {
 
                 log.info("[{}] LLM 响应完成，总长度: {}", empNo, fullResponse.length());
 
-                // 9. 保存 AI 回复
+                // 10. 保存 AI 回复
                 ChatMessage aiMsg = new ChatMessage();
                 aiMsg.setSessionId(finalSessionId);
                 aiMsg.setRole("assistant");

@@ -65,7 +65,8 @@ export function sendChatMessage(
   onMessage: (chunk: string) => void,
   onDone: (data: { sessionId: string; messageId: string }) => void,
   onError: (error: string) => void,
-  onReasoning?: (chunk: string) => void
+  onReasoning?: (chunk: string) => void,
+  skillId?: string | null
 ): AbortController {
   const controller = new AbortController()
 
@@ -97,7 +98,7 @@ export function sendChatMessage(
   fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ sessionId, configId, content }),
+    body: JSON.stringify({ sessionId, configId, content, skillId: skillId || null }),
     signal: controller.signal,
   }).then(async (response) => {
     if (!response.ok) {

@@ -5,7 +5,7 @@
       <!-- 顶部工具栏 -->
       <div class="p-4 flex justify-between items-center border-b border-slate-100">
         <div class="flex items-center gap-2">
-          <span class="text-xl">🧠</span>
+          <span class="text-xl"></span>
           <span class="text-base font-bold tracking-tight text-slate-800">Wiki文档</span>
         </div>
         <div class="flex items-center gap-1">

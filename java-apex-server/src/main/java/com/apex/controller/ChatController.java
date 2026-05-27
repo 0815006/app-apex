@@ -51,10 +51,11 @@ public class ChatController {
      */
     @PostMapping(value = "/send", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter sendMessage(@RequestBody ChatRequest request, HttpServletResponse response) {
-        log.info("[{}] 发送消息: sessionId={}, configId={}, content={}",
+        log.info("[{}] 发送消息: sessionId={}, configId={}, skillId={}, content={}",
                 EmpContext.getEmpNo(),
                 request.sessionId(),
                 request.configId(),
+                request.skillId(),
                 request.content().substring(0, Math.min(request.content().length(), 30)));
         // 防止反向代理缓冲 SSE 流
         response.setHeader("X-Accel-Buffering", "no");
@@ -62,7 +63,8 @@ public class ChatController {
         return chatService.sendMessage(
                 request.sessionId(),
                 request.configId(),
-                request.content()
+                request.content(),
+                request.skillId()
         );
     }
 
