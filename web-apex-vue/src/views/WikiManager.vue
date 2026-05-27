@@ -9,7 +9,7 @@
           <span class="text-base font-bold tracking-tight text-slate-800">Wiki文档</span>
         </div>
         <div class="flex items-center gap-1">
-          <el-button size="small" type="primary" plain class="!rounded-full !px-3" @click="triggerMdImport">
+          <el-button size="small" type="primary" plain class="!rounded-full !px-3" @click="onImportClick">
             <el-icon class="mr-1"><Upload /></el-icon>导入
           </el-button>
           <input
@@ -22,28 +22,46 @@
         </div>
       </div>
 
-      <!-- 搜索栏 -->
-      <div class="px-3 pt-3">
+      <!-- 搜索栏 + 刷新 -->
+      <div class="px-3 pt-3 flex items-center gap-1">
         <el-input
           v-model="filterText"
           placeholder="搜索文档或文件夹..."
           size="small"
           :prefix-icon="Search"
           clearable
+          class="flex-1"
         />
+        <el-button size="small" :icon="Refresh" circle class="!border-none !shadow-none" @click="refreshTree" />
       </div>
 
       <!-- 目录树区域 -->
       <div class="flex-1 overflow-y-auto px-2 py-2">
+        <!-- 空状态 -->
+        <el-empty
+          v-if="wikiTreeData.length === 0"
+          description="暂无文档，请新建或导入"
+          :image-size="80"
+          class="mt-8"
+        >
+          <template #image>
+            <div class="text-3xl">📂</div>
+          </template>
+        </el-empty>
+
         <el-tree
+          v-else
           ref="treeRef"
           :data="wikiTreeData"
           :props="defaultProps"
           node-key="id"
           highlight-current
-          default-expand-all
+          :expand-on-click-node="false"
           :filter-node-method="filterNode"
+          draggable
+          :allow-drop="allowDrop"
           @node-click="handleNodeClick"
+          @node-drop="handleNodeDrop"
           class="!bg-transparent wiki-custom-tree"
         >
           <template #default="{ node, data }">
@@ -54,28 +72,64 @@
                 <span class="truncate text-slate-600 group-hover:text-indigo-600 transition-colors">
                   {{ node.label }}
                 </span>
+                <!-- 节点计数徽标 -->
+                <el-tag
+                  v-if="data.type === 1 && data.children && data.children.length > 0"
+                  size="small"
+                  class="!text-[10px] !px-1.5 !py-0 !leading-none ml-1 shrink-0"
+                  type="info"
+                  round
+                >
+                  {{ data.children.length }}
+                </el-tag>
               </span>
-              <el-dropdown trigger="click" @command="(cmd: string) => handleCommand(cmd, data)">
-                <el-icon class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 transition-opacity shrink-0 ml-1">
-                  <MoreFilled />
-                </el-icon>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="createDoc" v-if="data.type === 1">
-                      <el-icon class="mr-1"><DocumentAdd /></el-icon>新建文档
-                    </el-dropdown-item>
-                    <el-dropdown-item command="createFolder" v-if="data.type === 1">
-                      <el-icon class="mr-1"><FolderAdd /></el-icon>新建文件夹
-                    </el-dropdown-item>
-                    <el-dropdown-item command="rename">
-                      <el-icon class="mr-1"><Edit /></el-icon>重命名
-                    </el-dropdown-item>
-                    <el-dropdown-item command="delete" class="!text-red-500">
-                      <el-icon class="mr-1"><Delete /></el-icon>删除
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
+              <!-- hover 操作区域 -->
+              <span class="flex items-center gap-0.5 shrink-0">
+                <!-- 排序按钮 -->
+                <el-button
+                  v-if="hasSiblingsAbove(data)"
+                  text
+                  size="small"
+                  class="!h-5 !w-5 !p-0 opacity-0 group-hover:opacity-100"
+                  @click.stop="handleMoveUp(data)"
+                >
+                  <el-icon :size="12"><CaretTop /></el-icon>
+                </el-button>
+                <el-button
+                  v-if="hasSiblingsBelow(data)"
+                  text
+                  size="small"
+                  class="!h-5 !w-5 !p-0 opacity-0 group-hover:opacity-100"
+                  @click.stop="handleMoveDown(data)"
+                >
+                  <el-icon :size="12"><CaretBottom /></el-icon>
+                </el-button>
+                <!-- 右键菜单 -->
+                <el-dropdown trigger="click" @command="(cmd: unknown) => handleCommand(String(cmd), data)">
+                  <el-icon class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 transition-opacity shrink-0 ml-1">
+                    <MoreFilled />
+                  </el-icon>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="createDoc" v-if="data.type === 1">
+                        <el-icon class="mr-1"><DocumentAdd /></el-icon>新建文档
+                      </el-dropdown-item>
+                      <el-dropdown-item command="createFolder" v-if="data.type === 1">
+                        <el-icon class="mr-1"><FolderAdd /></el-icon>新建文件夹
+                      </el-dropdown-item>
+                      <el-dropdown-item command="importMarkdown" v-if="data.type === 1">
+                        <el-icon class="mr-1"><Upload /></el-icon>导入 .md 到此
+                      </el-dropdown-item>
+                      <el-dropdown-item command="rename">
+                        <el-icon class="mr-1"><Edit /></el-icon>重命名
+                      </el-dropdown-item>
+                      <el-dropdown-item command="delete" class="!text-red-500">
+                        <el-icon class="mr-1"><Delete /></el-icon>删除
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </span>
             </span>
           </template>
         </el-tree>
@@ -84,11 +138,18 @@
       <!-- 底部操作栏 -->
       <div class="p-4 border-t border-slate-100 bg-slate-50/50">
         <div class="flex flex-col gap-2">
-          <el-button class="w-full !rounded-xl shadow-sm" @click="handleCreateRootDoc">
-            <span class="inline-flex items-center gap-1.5">
-              <el-icon><DocumentAdd /></el-icon>新建根文档
-            </span>
-          </el-button>
+          <div class="flex gap-2">
+            <el-button class="flex-1 !rounded-xl shadow-sm" @click="handleCreateRootDoc">
+              <span class="inline-flex items-center gap-1.5">
+                <el-icon><DocumentAdd /></el-icon>根文档
+              </span>
+            </el-button>
+            <el-button class="flex-1 !rounded-xl shadow-sm" @click="handleCreateRootFolder">
+              <span class="inline-flex items-center gap-1.5">
+                <el-icon><FolderAdd /></el-icon>根文件夹
+              </span>
+            </el-button>
+          </div>
           <el-button v-if="currentDoc.id" type="primary" class="w-full !rounded-xl shadow-sm" @click="toggleEditMode">
             <span class="inline-flex items-center gap-1.5">
               <el-icon><EditPen /></el-icon>
@@ -101,15 +162,26 @@
 
     <!-- ========== 右侧内容区 ========== -->
     <main class="flex-1 flex flex-col bg-white overflow-hidden" v-loading="loading">
-      <!-- 顶部面包屑 -->
+      <!-- 顶部面包屑（全路径） -->
       <header class="h-14 border-b border-slate-100 flex items-center justify-between px-8 bg-slate-50/30 shrink-0">
-        <div class="flex items-center gap-2 text-sm text-slate-400">
-          <span>工作区</span>
-          <span class="text-xs">/</span>
-          <span class="text-slate-600 font-medium">{{ currentDoc.title || '未选择文档' }}</span>
+        <div class="flex items-center gap-1 text-sm text-slate-400 overflow-hidden">
+          <span
+            class="cursor-pointer hover:text-indigo-500 transition-colors shrink-0"
+            @click="navigateToRoot"
+          >工作区</span>
+          <div v-for="(crumb, idx) in breadcrumbPath" :key="crumb.id" class="flex items-center gap-1">
+            <span class="text-xs mx-1">/</span>
+            <span
+              class="cursor-pointer hover:text-indigo-500 transition-colors truncate max-w-[200px]"
+              :class="{ 'text-slate-600 font-medium': idx === breadcrumbPath.length - 1 }"
+              @click="navigateToBreadcrumb(crumb)"
+            >
+              {{ crumb.title }}
+            </span>
+          </div>
         </div>
-        <div class="text-xs text-slate-400" v-if="currentDoc.updateTime">
-          最后更新：{{ formatTime(currentDoc.updateTime) }}
+        <div class="text-xs text-slate-400 shrink-0 ml-4" v-if="lastUpdateTimeDisplay">
+          最后更新：{{ lastUpdateTimeDisplay }}
         </div>
       </header>
 
@@ -135,7 +207,18 @@
           </div>
         </div>
 
-        <!-- 预览模式 -->
+        <!-- 文件夹内容预览 -->
+        <FolderDocList
+          v-else-if="currentFolder && !currentDoc.id"
+          :folder-title="currentFolder.title"
+          :children="folderChildren"
+          :loading="folderChildrenLoading"
+          @select-node="handleSelectFolderNode"
+          @create-doc="handleCreateDocInFolder"
+          @import-markdown="handleImportToCurrentFolder"
+        />
+
+        <!-- 文档预览模式 -->
         <div v-else class="px-12 py-10 animate-fade-in">
           <div v-if="currentDoc.id" class="prose prose-slate prose-indigo max-w-none">
             <h1 class="text-3xl font-extrabold text-slate-800 tracking-tight mb-8 !mt-0">
@@ -195,6 +278,7 @@ import { MdEditor, MdPreview } from 'md-editor-v3'
 import 'md-editor-v3/lib/style.css'
 import {
   Search,
+  Refresh,
   Upload,
   Folder,
   Document,
@@ -204,9 +288,20 @@ import {
   Edit,
   Delete,
   EditPen,
+  CaretTop,
+  CaretBottom,
 } from '@element-plus/icons-vue'
-import { getWikiTree, getDocDetail, getDocByTitle, saveDoc, deleteDoc } from '@/api/wiki'
+import {
+  getWikiTree,
+  getDocDetail,
+  getDocByTitle,
+  saveDoc,
+  deleteDoc,
+  moveNode,
+  getFolderChildren,
+} from '@/api/wiki'
 import type { WikiNodeVO, WikiDocument } from '@/types/wiki'
+import FolderDocList from '@/components/wiki/FolderDocList.vue'
 
 // ==================== 状态定义 ====================
 
@@ -217,6 +312,9 @@ const currentDoc = ref<WikiDocument>({
   type: 2,
   parentId: '0',
 })
+const currentFolder = ref<WikiNodeVO | null>(null)
+const folderChildren = ref<WikiNodeVO[]>([])
+const folderChildrenLoading = ref(false)
 const isEditing = ref(false)
 const loading = ref(false)
 const filterText = ref('')
@@ -230,6 +328,9 @@ const dialogTitle = ref('')
 const dialogFormTitle = ref('')
 const dialogMode = ref<'createDoc' | 'createFolder' | 'rename'>('createDoc')
 const dialogTargetData = ref<WikiNodeVO | null>(null)
+
+// 导入目标文件夹（右键「导入到此处」专用）
+const importTargetFolderId = ref<string | null>(null)
 
 // ==================== 树配置 ====================
 
@@ -251,6 +352,11 @@ const loadTree = async () => {
   }
 }
 
+const refreshTree = async () => {
+  await loadTree()
+  ElMessage.success('目录树已刷新')
+}
+
 onMounted(() => {
   loadTree()
 })
@@ -270,10 +376,21 @@ function filterNode(value: string, data: WikiNodeVO): boolean {
 
 const handleNodeClick = async (data: WikiNodeVO) => {
   if (data.type === 1) {
-    // 文件夹不触发内容加载
-    return
+    // 文件夹：仅展开/折叠，不触发后台请求
+    const node = (treeRef.value as { getNode: (key: string) => { expanded: boolean; expand: () => void; collapse: () => void } | null } | null)?.getNode(data.id)
+    if (node) {
+      if (node.expanded) {
+        node.collapse()
+      } else {
+        node.expand()
+      }
+    }
+  } else {
+    // 文档：加载内容
+    currentFolder.value = null
+    folderChildren.value = []
+    await loadDocument(data.id)
   }
-  await loadDocument(data.id)
 }
 
 const loadDocument = async (id: string) => {
@@ -291,11 +408,42 @@ const loadDocument = async (id: string) => {
   }
 }
 
+const loadFolderContent = async (folder: WikiNodeVO) => {
+  currentFolder.value = folder
+  folderChildrenLoading.value = true
+  try {
+    const res = await getFolderChildren(folder.id)
+    if (res.code === 200) {
+      folderChildren.value = res.data || []
+    }
+  } catch {
+    folderChildren.value = []
+  } finally {
+    folderChildrenLoading.value = false
+  }
+}
+
+// ==================== 文件夹内选择节点 ====================
+
+const handleSelectFolderNode = async (item: WikiNodeVO) => {
+  if (item.type === 1) {
+    // 文件夹内的文件夹 → 进入该文件夹
+    await loadFolderContent(item)
+    // 同时定位并展开树
+    ;(treeRef.value as { setCurrentKey: (id: string) => void } | null)?.setCurrentKey(item.id)
+  } else {
+    // 文档 → 加载
+    currentFolder.value = null
+    folderChildren.value = []
+    await loadDocument(item.id)
+    ;(treeRef.value as { setCurrentKey: (id: string) => void } | null)?.setCurrentKey(item.id)
+  }
+}
+
 // ==================== 编辑模式切换 ====================
 
 const toggleEditMode = async () => {
   if (isEditing.value) {
-    // 保存
     if (!currentDoc.value.title.trim()) {
       ElMessage.warning('标题不能为空')
       return
@@ -325,6 +473,16 @@ const toggleEditMode = async () => {
   }
 }
 
+// ==================== 面包屑头部时间显示 ====================
+
+const lastUpdateTimeDisplay = computed(() => {
+  const docTime = currentDoc.value.updateTime
+  const folderTime = currentFolder.value?.updateTime
+  const time = docTime || folderTime
+  if (!time) return ''
+  return formatTime(time)
+})
+
 // ==================== 双链跳转: [[标题]] 正则处理 ====================
 
 const processedContent = computed(() => {
@@ -346,11 +504,10 @@ const handleContentAreaClick = async (e: MouseEvent) => {
   try {
     const res = await getDocByTitle(title)
     if (res.code === 200 && res.data) {
-      // 情景 A: 文档存在，丝滑切换
       currentDoc.value = res.data
+      currentFolder.value = null
       isEditing.value = false
     } else if (res.code === 404) {
-      // 情景 B: 文档不存在（拦截器对 404 放行 resolve），引导创建
       handleDoubleLinkNotFound(title)
     }
   } catch {
@@ -394,6 +551,9 @@ const handleCommand = (cmd: string, data: WikiNodeVO) => {
       break
     case 'createFolder':
       openDialog('createFolder', data)
+      break
+    case 'importMarkdown':
+      handleImportToFolder(data)
       break
     case 'rename':
       openDialog('rename', data)
@@ -455,10 +615,13 @@ const handleCreate = async (title: string) => {
       ElMessage.success(`${dialogMode.value === 'createDoc' ? '文档' : '文件夹'}创建成功`)
       dialogVisible.value = false
       await loadTree()
-      // 如果是文档，自动选中
       if (type === 2 && res.data) {
         currentDoc.value = res.data
+        currentFolder.value = null
         isEditing.value = false
+      } else if (type === 1 && dialogTargetData.value) {
+        // 在当前文件夹下创建子文件夹，刷新该文件夹内容
+        await loadFolderContent(dialogTargetData.value)
       }
     }
   } catch {
@@ -473,7 +636,6 @@ const handleRename = async (newTitle: string) => {
 
   loading.value = true
   try {
-    // 先获取完整文档数据，更新标题后保存
     const res = await getDocDetail(dialogTargetData.value.id)
     if (res.code === 200 && res.data) {
       const updated = { ...res.data, title: newTitle }
@@ -482,9 +644,11 @@ const handleRename = async (newTitle: string) => {
         ElMessage.success('重命名成功')
         dialogVisible.value = false
         await loadTree()
-        // 如果当前打开的就是被重命名的文档，更新标题
         if (currentDoc.value.id === dialogTargetData.value.id) {
           currentDoc.value.title = newTitle
+        }
+        if (currentFolder.value?.id === dialogTargetData.value.id) {
+          currentFolder.value.title = newTitle
         }
       }
     }
@@ -514,10 +678,13 @@ const handleDelete = async (data: WikiNodeVO) => {
     const res = await deleteDoc(data.id)
     if (res.code === 200) {
       ElMessage.success(`${typeLabel}已删除`)
-      // 如果删除的是当前打开的文档，清空
       if (currentDoc.value.id === data.id) {
         currentDoc.value = { title: '', content: '', type: 2, parentId: '0' }
         isEditing.value = false
+      }
+      if (currentFolder.value?.id === data.id) {
+        currentFolder.value = null
+        folderChildren.value = []
       }
       await loadTree()
     }
@@ -543,9 +710,230 @@ const handleCreateRootDoc = () => {
   })
 }
 
+const handleCreateRootFolder = () => {
+  dialogMode.value = 'createFolder'
+  dialogTargetData.value = null
+  dialogTitle.value = '新建根文件夹'
+  dialogFormTitle.value = ''
+  dialogVisible.value = true
+  nextTick(() => {
+    ;(dialogInputRef.value as { focus: () => void } | null)?.focus()
+  })
+}
+
+// ==================== 文件夹内快捷操作 ====================
+
+const handleCreateDocInFolder = () => {
+  if (!currentFolder.value) return
+  dialogMode.value = 'createDoc'
+  dialogTargetData.value = currentFolder.value
+  dialogTitle.value = `在「${currentFolder.value.title}」下新建文档`
+  dialogFormTitle.value = ''
+  dialogVisible.value = true
+  nextTick(() => {
+    ;(dialogInputRef.value as { focus: () => void } | null)?.focus()
+  })
+}
+
+const handleImportToCurrentFolder = () => {
+  if (!currentFolder.value) return
+  importTargetFolderId.value = currentFolder.value.id
+  fileInputRef.value?.click()
+}
+
+const handleImportToFolder = (data: WikiNodeVO) => {
+  importTargetFolderId.value = data.id
+  fileInputRef.value?.click()
+}
+
+// ==================== 拖拽排序与移动 ====================
+
+const allowDrop = (
+  _draggingNode: { data: WikiNodeVO },
+  dropNode: { data: WikiNodeVO },
+  type: string
+): boolean => {
+  // 只能拖到节点之前或之后（同级排序），或者拖到文件夹内部
+  if (type === 'inner') {
+    // 拖入文件夹内部 → 只允许文件夹接收
+    return dropNode.data.type === 1
+  }
+  // 同级排序 → 始终允许
+  return true
+}
+
+const handleNodeDrop = async (
+  draggingNode: { data: WikiNodeVO },
+  dropNode: { data: WikiNodeVO },
+  dropType: string,
+  _ev: unknown
+) => {
+  const draggedId = draggingNode.data.id
+  let newParentId: string
+  let newSortOrder: number
+
+  if (dropType === 'inner') {
+    // 拖入文件夹内部 → 成为其子节点
+    newParentId = dropNode.data.id
+    // 获取目标文件夹的现有子节点数，放到最后
+    const existingChildren = dropNode.data.children || []
+    newSortOrder = existingChildren.length * 10
+  } else {
+    // 同级排序 → 保持同一父节点，计算新的 sort_order
+    newParentId = dropNode.data.parentId
+    // 用目标节点的 sort_order 作为参考
+    const siblings = getFlatSiblings(dropNode.data.parentId)
+    const targetIdx = siblings.findIndex((s) => s.id === dropNode.data.id)
+    if (dropType === 'before') {
+      // 插入到目标之前
+      if (targetIdx <= 0) {
+        newSortOrder = 0
+      } else {
+        const prevSortOrder = siblings[targetIdx - 1].sortOrder || 0
+        const targetSortOrder = siblings[targetIdx].sortOrder || 0
+        newSortOrder = Math.floor((prevSortOrder + targetSortOrder) / 2)
+      }
+    } else {
+      // 插入到目标之后 (after)
+      if (targetIdx >= siblings.length - 1) {
+        newSortOrder = ((siblings[targetIdx].sortOrder || 0) + 10)
+      } else {
+        const targetSortOrder = siblings[targetIdx].sortOrder || 0
+        const nextSortOrder = siblings[targetIdx + 1].sortOrder || 0
+        newSortOrder = Math.floor((targetSortOrder + nextSortOrder) / 2)
+      }
+    }
+  }
+
+  loading.value = true
+  try {
+    const res = await moveNode(draggedId, newParentId, newSortOrder)
+    if (res.code === 200) {
+      ElMessage.success('移动成功')
+      await loadTree()
+      // 如果当前文件夹内容需要刷新
+      if (currentFolder.value) {
+        await loadFolderContent(currentFolder.value)
+      }
+    } else {
+      ElMessage.error('移动失败：' + (res.message || '未知错误'))
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '请求失败'
+    ElMessage.error('移动失败：' + msg)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 获取指定 parentId 下所有同级的平铺节点列表（用于计算 sort_order）
+const getFlatSiblings = (parentId: string): { id: string; sortOrder: number }[] => {
+  // 从树中递归查找
+  const result: { id: string; sortOrder: number }[] = []
+  const collectFromTree = (nodes: WikiNodeVO[]) => {
+    for (const node of nodes) {
+      if (node.parentId === parentId) {
+        // 这是顶层同级节点
+        for (let i = 0; i < nodes.length; i++) {
+          if (nodes[i].parentId === parentId) {
+            result.push({ id: nodes[i].id, sortOrder: i * 10 })
+          }
+        }
+        return
+      }
+      if (node.children) {
+        collectFromTree(node.children)
+      }
+    }
+  }
+  collectFromTree(wikiTreeData.value)
+  return result
+}
+
+// ==================== 排序按钮 ====================
+
+const findParentNode = (data: WikiNodeVO): { parentId: string; siblings: WikiNodeVO[] } | null => {
+  const find = (nodes: WikiNodeVO[]): { parentId: string; siblings: WikiNodeVO[] } | null => {
+    for (const node of nodes) {
+      if (node.children) {
+        if (node.children.some((c) => c.id === data.id)) {
+          return { parentId: node.id, siblings: node.children }
+        }
+        const result = find(node.children)
+        if (result) return result
+      }
+    }
+    return null
+  }
+  // 根层级
+  if (wikiTreeData.value.some((n) => n.id === data.id)) {
+    return { parentId: '0', siblings: wikiTreeData.value }
+  }
+  return find(wikiTreeData.value)
+}
+
+const hasSiblingsAbove = (data: WikiNodeVO): boolean => {
+  const parent = findParentNode(data)
+  if (!parent) return false
+  const idx = parent.siblings.findIndex((s) => s.id === data.id)
+  return idx > 0
+}
+
+const hasSiblingsBelow = (data: WikiNodeVO): boolean => {
+  const parent = findParentNode(data)
+  if (!parent) return false
+  const idx = parent.siblings.findIndex((s) => s.id === data.id)
+  return idx < parent.siblings.length - 1
+}
+
+const handleMoveUp = async (data: WikiNodeVO) => {
+  const parent = findParentNode(data)
+  if (!parent) return
+  const idx = parent.siblings.findIndex((s) => s.id === data.id)
+  if (idx <= 0) return
+
+  loading.value = true
+  try {
+    const res = await moveNode(data.id, parent.parentId, (idx - 1) * 10 - 5)
+    if (res.code !== 200) {
+      ElMessage.error('上移失败：' + (res.message || '未知错误'))
+      return
+    }
+    await loadTree()
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '请求失败'
+    ElMessage.error('上移失败：' + msg)
+  } finally {
+    loading.value = false
+  }
+}
+
+const handleMoveDown = async (data: WikiNodeVO) => {
+  const parent = findParentNode(data)
+  if (!parent) return
+  const idx = parent.siblings.findIndex((s) => s.id === data.id)
+  if (idx >= parent.siblings.length - 1) return
+
+  loading.value = true
+  try {
+    const res = await moveNode(data.id, parent.parentId, (idx + 1) * 10 + 5)
+    if (res.code !== 200) {
+      ElMessage.error('下移失败：' + (res.message || '未知错误'))
+      return
+    }
+    await loadTree()
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '请求失败'
+    ElMessage.error('下移失败：' + msg)
+  } finally {
+    loading.value = false
+  }
+}
+
 // ==================== Markdown 导入 ====================
 
-const triggerMdImport = () => {
+const onImportClick = () => {
+  importTargetFolderId.value = null
   fileInputRef.value?.click()
 }
 
@@ -562,8 +950,10 @@ const handleMdFileChange = (e: Event) => {
       const mdContent = event.target?.result as string
       const docTitle = file.name.replace(/\.md$/i, '')
 
+      // 确定 parentId：优先使用右键指定的文件夹，其次当前选中的文件夹
       const parentId =
-        currentDoc.value.id && currentDoc.value.type === 1 ? currentDoc.value.id : '0'
+        importTargetFolderId.value ||
+        (currentFolder.value?.id ? currentFolder.value.id : '0')
 
       const res = await saveDoc({
         title: docTitle,
@@ -577,17 +967,83 @@ const handleMdFileChange = (e: Event) => {
         await loadTree()
         if (res.data) {
           currentDoc.value = res.data
+          currentFolder.value = null
           isEditing.value = false
+        }
+        // 如果导入到文件夹，刷新文件夹内容
+        if (parentId !== '0' && currentFolder.value?.id === parentId) {
+          await loadFolderContent(currentFolder.value)
         }
       }
     } catch {
       ElMessage.error('导入文档失败')
     } finally {
       loading.value = false
+      importTargetFolderId.value = null
       if (fileInputRef.value) fileInputRef.value.value = ''
     }
   }
   reader.readAsText(file)
+}
+
+// ==================== 面包屑导航 ====================
+
+// 面包屑路径：从根到当前选择节点的完整路径
+const breadcrumbPath = computed(() => {
+  const targetId = currentDoc.value.id || currentFolder.value?.id
+  if (!targetId) return []
+
+  const path: { id: string; title: string }[] = []
+  const findPath = (nodes: WikiNodeVO[], currentPath: { id: string; title: string }[]): boolean => {
+    for (const node of nodes) {
+      const newPath = [...currentPath, { id: node.id, title: node.title }]
+      if (node.id === targetId) {
+        path.push(...newPath)
+        return true
+      }
+      if (node.children && findPath(node.children, newPath)) {
+        return true
+      }
+    }
+    return false
+  }
+  findPath(wikiTreeData.value, [])
+  return path
+})
+
+const navigateToRoot = () => {
+  currentDoc.value = { title: '', content: '', type: 2, parentId: '0' }
+  currentFolder.value = null
+  isEditing.value = false
+  folderChildren.value = []
+  ;(treeRef.value as { setCurrentKey: (id: string) => void } | null)?.setCurrentKey('')
+}
+
+const navigateToBreadcrumb = async (crumb: { id: string; title: string }) => {
+  // 在树中查找该节点类型
+  const findNode = (nodes: WikiNodeVO[]): WikiNodeVO | null => {
+    for (const node of nodes) {
+      if (node.id === crumb.id) return node
+      if (node.children) {
+        const found = findNode(node.children)
+        if (found) return found
+      }
+    }
+    return null
+  }
+  const node = findNode(wikiTreeData.value)
+  if (!node) return
+
+  if (node.type === 1) {
+    await loadFolderContent(node)
+    currentDoc.value = { title: '', content: '', type: 2, parentId: '0' }
+    isEditing.value = false
+  } else {
+    currentFolder.value = null
+    folderChildren.value = []
+    await loadDocument(node.id)
+  }
+  ;(treeRef.value as { setCurrentKey: (id: string) => void } | null)?.setCurrentKey(node.id)
 }
 
 // ==================== 工具函数 ====================
@@ -617,6 +1073,14 @@ const formatTime = (time?: string): string => {
 
 .wiki-custom-tree :deep(.el-tree-node__content:hover) {
   background-color: rgb(248 250 252) !important;
+}
+
+/* 拖拽视觉反馈 */
+.wiki-custom-tree :deep(.el-tree-node__drop-indicator) {
+  height: 2px;
+  background-color: rgb(99 102 241);
+  left: 0 !important;
+  right: 0 !important;
 }
 
 /* ========== 滚动区域平滑 ========== */

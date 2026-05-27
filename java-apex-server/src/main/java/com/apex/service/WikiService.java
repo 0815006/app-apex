@@ -126,4 +126,92 @@ public class WikiService {
             collectChildrenIds(child.getId(), collector);
         }
     }
+
+    /**
+     * 移动节点到指定父节点和排序位置。
+     */
+    @Transactional
+    public void moveNode(String id, String newParentId, Integer newSortOrder) {
+        WikiDocument doc = wikiDocumentMapper.selectById(id);
+        if (doc == null) {
+            throw new BusinessException(404, "节点不存在");
+        }
+        // 防止循环引用：目标父节点不能是自己的子孙节点
+        if (!"0".equals(newParentId)) {
+            List<String> descendantIds = new ArrayList<>();
+            collectChildrenIds(id, descendantIds);
+            if (descendantIds.contains(newParentId) || newParentId.equals(id)) {
+                throw new BusinessException("不能将节点移动到自身或自身的子孙节点下");
+            }
+            // 校验目标父节点存在且为文件夹
+            WikiDocument targetParent = wikiDocumentMapper.selectById(newParentId);
+            if (targetParent == null || targetParent.getType() != 1) {
+                throw new BusinessException("目标父节点不存在或不是文件夹");
+            }
+        }
+        // 如果父节点变了，需要调整原父节点下的同级排序
+        if (!newParentId.equals(doc.getParentId())) {
+            reorderSiblings(doc.getParentId());
+        }
+        // 更新 parentId 和 sortOrder
+        doc.setParentId(newParentId);
+        doc.setSortOrder(newSortOrder);
+        wikiDocumentMapper.updateById(doc);
+        // 重排目标父节点下的所有同级节点
+        reorderSiblings(newParentId);
+    }
+
+    /**
+     * 批量更新同级节点的 sort_order。
+     */
+    @Transactional
+    public void batchUpdateSortOrder(List<com.apex.model.SortOrderDTO.SortItem> items) {
+        for (com.apex.model.SortOrderDTO.SortItem item : items) {
+            WikiDocument doc = wikiDocumentMapper.selectById(item.getId());
+            if (doc != null) {
+                doc.setSortOrder(item.getSortOrder());
+                wikiDocumentMapper.updateById(doc);
+            }
+        }
+    }
+
+    /**
+     * 重排指定父节点下所有子节点的 sort_order（使用整数间隔法：0, 10, 20, ...）。
+     */
+    private void reorderSiblings(String parentId) {
+        List<WikiDocument> siblings = wikiDocumentMapper.selectList(
+                new LambdaQueryWrapper<WikiDocument>()
+                        .eq(WikiDocument::getParentId, parentId)
+                        .orderByAsc(WikiDocument::getSortOrder)
+        );
+        for (int i = 0; i < siblings.size(); i++) {
+            WikiDocument sib = siblings.get(i);
+            sib.setSortOrder(i * 10);
+            wikiDocumentMapper.updateById(sib);
+        }
+    }
+
+    /**
+     * 获取指定文件夹的直接子节点（不递归）。
+     */
+    public List<WikiNodeVO> getChildrenById(String folderId) {
+        WikiDocument folder = wikiDocumentMapper.selectById(folderId);
+        if (folder == null || folder.getType() != 1) {
+            throw new BusinessException(404, "文件夹不存在");
+        }
+        List<WikiDocument> children = wikiDocumentMapper.selectList(
+                new LambdaQueryWrapper<WikiDocument>()
+                        .eq(WikiDocument::getParentId, folderId)
+                        .orderByAsc(WikiDocument::getSortOrder)
+        );
+        return children.stream()
+                .map(doc -> new WikiNodeVO(
+                        doc.getId(),
+                        doc.getTitle(),
+                        doc.getType(),
+                        doc.getParentId(),
+                        doc.getUpdateTime()
+                ))
+                .toList();
+    }
 }

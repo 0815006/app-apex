@@ -3,6 +3,8 @@ package com.apex.controller;
 import com.apex.common.EmpContext;
 import com.apex.common.Result;
 import com.apex.entity.WikiDocument;
+import com.apex.model.MoveNodeDTO;
+import com.apex.model.SortOrderDTO;
 import com.apex.model.WikiNodeVO;
 import com.apex.service.WikiService;
 import lombok.RequiredArgsConstructor;
@@ -66,5 +68,35 @@ public class WikiController {
         log.info("[{}] 删除 Wiki 节点: id={}", EmpContext.getEmpNo(), id);
         wikiService.deleteById(id);
         return Result.success();
+    }
+
+    /**
+     * 移动节点到指定父节点和排序位置。
+     */
+    @PutMapping("/{id}/move")
+    public Result<Void> moveNode(@PathVariable String id, @RequestBody MoveNodeDTO dto) {
+        log.info("[{}] 移动 Wiki 节点: id={} -> parentId={}, sortOrder={}",
+                EmpContext.getEmpNo(), id, dto.getNewParentId(), dto.getNewSortOrder());
+        wikiService.moveNode(id, dto.getNewParentId(), dto.getNewSortOrder());
+        return Result.success();
+    }
+
+    /**
+     * 批量更新同级节点排序。
+     */
+    @PutMapping("/sort-batch")
+    public Result<Void> batchUpdateSortOrder(@RequestBody SortOrderDTO dto) {
+        log.info("[{}] 批量更新 Wiki 排序: {} 个节点", EmpContext.getEmpNo(), dto.getItems().size());
+        wikiService.batchUpdateSortOrder(dto.getItems());
+        return Result.success();
+    }
+
+    /**
+     * 获取指定文件夹的直接子节点（不递归）。
+     */
+    @GetMapping("/{folderId}/children")
+    public Result<List<WikiNodeVO>> getChildren(@PathVariable String folderId) {
+        log.info("[{}] 获取文件夹子节点: folderId={}", EmpContext.getEmpNo(), folderId);
+        return Result.success(wikiService.getChildrenById(folderId));
     }
 }

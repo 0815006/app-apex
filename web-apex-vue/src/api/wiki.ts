@@ -42,3 +42,32 @@ export function saveDoc(doc: {
 export function deleteDoc(id: string): Promise<{ code: number; message: string; data: null }> {
   return request.delete(`/wiki/${id}`)
 }
+
+/**
+ * 移动节点到指定父节点和排序位置。
+ */
+export function moveNode(
+  id: string,
+  newParentId: string,
+  newSortOrder: number
+): Promise<{ code: number; message: string; data: null }> {
+  return request.put(`/wiki/${id}/move`, { newParentId, newSortOrder })
+}
+
+/**
+ * 批量更新同级节点排序。
+ */
+export function batchUpdateSortOrder(
+  items: { id: string; sortOrder: number }[]
+): Promise<{ code: number; message: string; data: null }> {
+  return request.put('/wiki/sort-batch', { items })
+}
+
+/**
+ * 获取指定文件夹的直接子节点（不递归）。
+ */
+export function getFolderChildren(
+  folderId: string
+): Promise<{ code: number; message: string; data: WikiNodeVO[] }> {
+  return request.get(`/wiki/${folderId}/children`)
+}
