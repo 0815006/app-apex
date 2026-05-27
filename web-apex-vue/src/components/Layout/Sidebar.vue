@@ -16,7 +16,7 @@
       </el-menu-item>
       <el-menu-item index="/wiki">
         <el-icon><Collection /></el-icon>
-        <span>Wiki</span>
+        <span>Wiki在线</span>
       </el-menu-item>
       <el-menu-item index="/fileshare">
         <el-icon><FolderOpened /></el-icon>
@@ -24,11 +24,11 @@
       </el-menu-item>
       <el-menu-item index="/chat">
         <el-icon><ChatDotRound /></el-icon>
-        <span>AI 聊天</span>
+        <span>AI大模型</span>
       </el-menu-item>
       <el-menu-item index="/skills">
         <el-icon><MagicStick /></el-icon>
-        <span>Skill</span>
+        <span>Skill工具</span>
       </el-menu-item>
     </el-menu>
   </div>

@@ -1,54 +1,94 @@
 <template>
-  <div class="chat-view">
+  <div class="flex h-full w-full bg-slate-50/60 font-sans overflow-hidden">
     <!-- ========== 左侧：会话列表 ========== -->
-    <aside class="chat-sidebar">
+    <aside class="w-72 bg-white/75 backdrop-blur-md border-r border-slate-200/50 flex flex-col shadow-sm z-10">
+      <!-- 顶部工具栏 -->
+      <div class="p-4 flex justify-between items-center border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">💬</span>
+          <span class="text-base font-bold tracking-tight text-slate-800">AI 对话</span>
+        </div>
+      </div>
+
       <!-- 新建对话按钮 -->
-      <div class="sidebar-header">
-        <el-button type="primary" class="new-chat-btn" @click="handleNewChat" :icon="Plus">
-          新建对话
+      <div class="px-3 pt-3">
+        <el-button class="w-full !rounded-xl shadow-sm" @click="handleNewChat">
+          <span class="inline-flex items-center gap-1.5">
+            <el-icon><ChatDotRound /></el-icon>新建对话
+          </span>
         </el-button>
       </div>
 
       <!-- 会话列表 -->
-      <div class="session-list" v-loading="sessionLoading">
-        <div
-          v-for="session in sessions"
-          :key="session.id"
-          :class="['session-item', { active: currentSessionId === session.id }]"
-          @click="handleSelectSession(session.id)"
+      <div class="flex-1 overflow-y-auto px-2 py-2" v-loading="sessionLoading">
+        <el-empty
+          v-if="sessions.length === 0 && !sessionLoading"
+          description="暂无对话，点击上方开始新对话"
+          :image-size="80"
+          class="mt-8"
         >
-          <div class="session-content">
-            <div class="session-title">{{ session.title }}</div>
-            <div class="session-meta">
-              <span class="session-model">{{ session.modelName }}</span>
-              <span class="session-time">{{ formatTime(session.updateTime) }}</span>
-            </div>
-          </div>
-          <el-popconfirm
-            title="确定删除该会话？"
-            confirm-button-text="删除"
-            cancel-button-text="取消"
-            @confirm.stop="handleDeleteSession(session.id)"
+          <template #image>
+            <div class="text-3xl">💬</div>
+          </template>
+        </el-empty>
+
+        <div v-else class="chat-session-list">
+          <div
+            v-for="session in sessions"
+            :key="session.id"
+            :class="['session-item', { active: currentSessionId === session.id }]"
+            @click="handleSelectSession(session.id)"
           >
-            <template #reference>
-              <el-button
-                class="session-delete-btn"
-                :icon="Delete"
-                link
-                size="small"
-                @click.stop
-              />
-            </template>
-          </el-popconfirm>
-        </div>
-        <div v-if="sessions.length === 0 && !sessionLoading" class="empty-sessions">
-          暂无对话，开始一个新对话吧
+            <span class="flex items-center justify-between w-full group pr-1">
+              <span class="flex items-center gap-2 text-sm truncate min-w-0">
+                <el-icon class="text-indigo-400 shrink-0"><ChatDotRound /></el-icon>
+                <span class="flex flex-col min-w-0">
+                  <!-- 重命名内联模式 -->
+                  <span v-if="renamingSessionId === session.id" class="session-rename-row" @click.stop>
+                    <el-input
+                      ref="renameInputRef"
+                      v-model="renameTitle"
+                      size="small"
+                      maxlength="100"
+                      @keyup.enter="handleRenameConfirm(session.id)"
+                      @blur="handleRenameCancel"
+                    />
+                  </span>
+                  <span v-else class="truncate text-slate-600 group-hover:text-indigo-600 transition-colors font-medium">
+                    {{ session.title }}
+                  </span>
+                  <span class="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                    <span v-if="session.modelName" class="truncate max-w-[100px]">{{ session.modelName }}</span>
+                    <span v-if="session.updateTime">{{ formatTime(session.updateTime) }}</span>
+                  </span>
+                </span>
+              </span>
+              <!-- hover 操作区域：下拉菜单 -->
+              <span class="flex items-center gap-0.5 shrink-0">
+                <el-dropdown trigger="click" @command="(cmd) => handleSessionCommand(String(cmd), session)">
+                  <el-icon class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 transition-opacity shrink-0 ml-1">
+                    <MoreFilled />
+                  </el-icon>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="rename">
+                        <el-icon class="mr-1"><Edit /></el-icon>重命名
+                      </el-dropdown-item>
+                      <el-dropdown-item command="delete" class="!text-red-500">
+                        <el-icon class="mr-1"><Delete /></el-icon>删除
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </span>
+            </span>
+          </div>
         </div>
       </div>
 
       <!-- 底部：设置按钮 -->
-      <div class="sidebar-footer">
-        <el-button :icon="Setting" link class="settings-btn" @click="configDialogVisible = true">
+      <div class="p-4 border-t border-slate-100 bg-slate-50/50">
+        <el-button :icon="Setting" link class="settings-btn w-full" @click="configDialogVisible = true">
           大模型配置
         </el-button>
       </div>
@@ -58,23 +98,35 @@
     <section class="chat-main">
       <!-- 顶部：模型选择器 -->
       <header class="chat-header">
-        <el-select
-          v-model="selectedConfigId"
-          placeholder="请选择大模型"
-          class="model-select"
-          @change="handleConfigChange"
-          :loading="configLoading"
-        >
-          <el-option
-            v-for="config in configOptions"
-            :key="config.id"
-            :label="`${config.configName} (${config.modelName})`"
-            :value="config.id"
-          />
-        </el-select>
-        <span v-if="configOptions.length === 0 && !configLoading" class="no-config-hint">
-          请先在左侧底部配置大模型
-        </span>
+        <div class="header-left">
+          <div class="model-select-wrapper">
+            <span class="model-label">模型</span>
+            <el-select
+              v-model="selectedConfigId"
+              placeholder="请选择大模型"
+              class="model-select"
+              @change="handleConfigChange"
+              :loading="configLoading"
+              size="default"
+            >
+              <el-option
+                v-for="config in configOptions"
+                :key="config.id"
+                :label="`${config.configName} (${config.modelName})`"
+                :value="config.id"
+              />
+            </el-select>
+          </div>
+          <span v-if="configOptions.length === 0 && !configLoading" class="no-config-hint">
+            请先在左侧底部配置大模型
+          </span>
+        </div>
+        <div class="header-right">
+          <span v-if="currentSessionId" class="current-session-badge">
+            <span class="badge-dot" />
+            {{ sessions.find(s => s.id === currentSessionId)?.title || '对话中' }}
+          </span>
+        </div>
       </header>
 
       <!-- 中间：消息列表 -->
@@ -92,14 +144,24 @@
           <div class="message-avatar">
             {{ msg.role === 'user' ? '👤' : '🤖' }}
           </div>
-          <div class="message-bubble" v-html="renderMarkdown(msg.content)" />
+          <template v-if="msg.role === 'assistant'">
+            <div class="message-body">
+              <div class="message-bubble" v-html="renderMarkdown(msg.content)" />
+              <div class="message-actions">
+                <button class="copy-btn" @click="copyMessage(msg.content)" title="复制回答">
+                  <el-icon><CopyDocument /></el-icon>
+                  <span>复制</span>
+                </button>
+              </div>
+            </div>
+          </template>
+          <div v-else class="message-bubble" v-html="renderMarkdown(msg.content)" />
         </div>
 
         <!-- 流式输出中的 AI 消息 -->
         <div v-if="streaming" class="message-row assistant">
           <div class="message-avatar">🤖</div>
           <div class="message-body">
-            <!-- 可折叠的思考过程 -->
             <div v-if="streamingReasoning" class="reasoning-block">
               <div class="reasoning-header" @click="reasoningExpanded = !reasoningExpanded">
                 <span class="reasoning-icon">{{ reasoningExpanded ? '▼' : '▶' }}</span>
@@ -118,92 +180,116 @@
 
       <!-- 底部：输入框 -->
       <footer class="chat-input-area">
-        <div class="input-row">
-          <!-- Skill 选择按钮 + 已选 Skill 标签 -->
-          <el-popover
-            placement="top-start"
-            :width="260"
-            trigger="click"
-            :visible="skillPopoverVisible"
-            @show="loadSkills"
-          >
-            <template #reference>
-              <el-badge :is-dot="!!selectedSkillId" class="skill-badge">
-                <el-button
-                  :icon="Plus"
-                  circle
-                  size="small"
-                  class="skill-add-btn"
-                  :title="selectedSkillId ? `当前 Skill: ${selectedSkillName}` : '选择 Skill'"
-                  @click="skillPopoverVisible = !skillPopoverVisible"
-                />
-              </el-badge>
-            </template>
-            <div class="skill-popover-content">
-              <div v-if="skillLoading" class="skill-loading">加载中...</div>
-              <div v-else-if="enabledSkills.length === 0" class="skill-empty">
-                暂无可用 Skill，请先去 <router-link to="/skills">Skill 管理</router-link> 创建
-              </div>
-              <div
-                v-for="skill in enabledSkills"
-                :key="skill.id"
-                :class="['skill-option', { selected: selectedSkillId === skill.id }]"
-                @click="handleSelectSkill(skill)"
-              >
-                <div class="skill-option-name">{{ skill.name }}</div>
-                <div class="skill-option-desc">{{ skill.description || '暂无简介' }}</div>
-              </div>
-              <div v-if="selectedSkillId" class="skill-clear-row">
-                <el-button link size="small" type="danger" @click="handleClearSkill">
-                  移除已选 Skill
-                </el-button>
-              </div>
-            </div>
-          </el-popover>
-
-          <!-- 已选 Skill 标签提示 -->
-          <span v-if="selectedSkillId && !skillPopoverVisible" class="skill-tag-hint">
-            <el-tag
-              type="success"
-              size="small"
-              closable
-              @close="handleClearSkill"
-              effect="dark"
-            >
+        <div v-if="selectedSkillId" class="skill-active-bar">
+          <div class="skill-active-info">
+            <span class="skill-active-icon">⚡</span>
+            <span class="skill-active-label">已激活 Skill</span>
+            <el-tag type="success" size="small" effect="dark" closable @close="handleClearSkill">
               {{ selectedSkillName }}
             </el-tag>
+          </div>
+          <span class="skill-active-desc">
+            {{ enabledSkills.find(s => s.id === selectedSkillId)?.description || '' }}
           </span>
-
-          <el-input
-            v-model="inputContent"
-            type="textarea"
-            :rows="3"
-            :placeholder="selectedSkillId ? `【${selectedSkillName}】输入消息，Enter 发送，Shift+Enter 换行` : '输入消息，Enter 发送，Shift+Enter 换行'"
-            resize="none"
-            :disabled="!selectedConfigId || sending"
-            @keydown.enter.exact="handleSend"
-            class="input-textarea"
-          />
         </div>
-        <div class="input-actions">
-          <span v-if="streaming" class="streaming-hint">AI 正在思考中…</span>
-          <el-button
-            v-if="streaming"
-            type="warning"
-            @click="handleStop"
-            size="small"
-          >
-            停止生成
-          </el-button>
-          <el-button
-            v-else
-            type="primary"
-            :disabled="!inputContent.trim() || !selectedConfigId"
-            :loading="sending"
-            @click="handleSend"
-          >
-            发送
-          </el-button>
+
+        <div class="input-container">
+          <div class="input-wrapper">
+            <el-input
+              v-model="inputContent"
+              type="textarea"
+              :rows="2"
+              :placeholder="selectedSkillId ? `以「${selectedSkillName}」身份发送消息…` : '输入消息，Enter 发送，Shift+Enter 换行'"
+              resize="none"
+              :disabled="!selectedConfigId || sending"
+              @keydown.enter.exact="handleSend"
+              class="input-textarea"
+            />
+          </div>
+
+          <div class="input-toolbar">
+            <div class="toolbar-left">
+              <el-popover
+                placement="top-start"
+                :width="280"
+                trigger="click"
+                :visible="skillPopoverVisible"
+                @show="loadSkills"
+              >
+                <template #reference>
+                  <el-button
+                    :icon="Plus"
+                    size="small"
+                    class="skill-trigger-btn"
+                    :class="{ 'skill-active': !!selectedSkillId }"
+                    @click="skillPopoverVisible = !skillPopoverVisible"
+                  >
+                    {{ selectedSkillId ? selectedSkillName : '选择 Skill' }}
+                  </el-button>
+                </template>
+                <div class="skill-popover-content">
+                  <div class="skill-popover-title">选择预置 Skill</div>
+                  <div v-if="skillLoading" class="skill-loading">
+                    <el-icon class="is-loading"><Loading /></el-icon>
+                    <span>加载中...</span>
+                  </div>
+                  <div v-else-if="enabledSkills.length === 0" class="skill-empty">
+                    <div class="skill-empty-icon">📦</div>
+                    <div>暂无可用 Skill</div>
+                    <router-link to="/skills" class="skill-empty-link">前往创建 →</router-link>
+                  </div>
+                  <div
+                    v-for="skill in enabledSkills"
+                    :key="skill.id"
+                    :class="['skill-option', { selected: selectedSkillId === skill.id }]"
+                    @click="handleSelectSkill(skill)"
+                  >
+                    <div class="skill-option-head">
+                      <span class="skill-option-name">{{ skill.name }}</span>
+                      <el-icon v-if="selectedSkillId === skill.id" class="skill-check" color="#67c23a"><Check /></el-icon>
+                    </div>
+                    <div class="skill-option-desc">{{ skill.description || '暂无简介' }}</div>
+                  </div>
+                  <div v-if="selectedSkillId" class="skill-clear-row">
+                    <el-button link size="small" @click="handleClearSkill">
+                      移除 Skill
+                    </el-button>
+                  </div>
+                </div>
+              </el-popover>
+            </div>
+
+            <div class="toolbar-right">
+              <span v-if="streaming" class="streaming-hint">
+                <span class="streaming-dot" />
+                AI 思考中
+              </span>
+              <el-button
+                v-if="streaming"
+                type="warning"
+                :icon="VideoPause"
+                @click="handleStop"
+                round
+                class="stop-btn"
+              >
+                停止生成
+              </el-button>
+              <el-button
+                v-else
+                type="primary"
+                :disabled="!inputContent.trim() || !selectedConfigId"
+                :loading="sending"
+                @click="handleSend"
+                round
+                class="send-btn"
+              >
+                <template v-if="!sending">
+                  <span>发送</span>
+                  <el-icon class="send-icon"><Promotion /></el-icon>
+                </template>
+              </el-button>
+            </div>
+          </div>
         </div>
       </footer>
     </section>
@@ -215,14 +301,27 @@
 
 <script setup lang="ts">
 import { ref, nextTick, watch, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Plus, Delete, Setting } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  Plus,
+  Delete,
+  Setting,
+  Check,
+  Loading,
+  VideoPause,
+  Promotion,
+  ChatDotRound,
+  MoreFilled,
+  Edit,
+  CopyDocument,
+} from '@element-plus/icons-vue'
 import { marked } from 'marked'
 import {
   listSessions,
   getMessages,
   deleteSession,
   sendChatMessage,
+  updateSessionTitle,
 } from '@/api/chat'
 import { listEnabledSkills } from '@/api/skill'
 import type { ChatSessionVO, ChatMessage, LlmConfigVO } from '@/types/chat'
@@ -234,6 +333,9 @@ import { listLlmConfigs } from '@/api/chat'
 const sessions = ref<ChatSessionVO[]>([])
 const sessionLoading = ref(false)
 const currentSessionId = ref<string | null>(null)
+const renamingSessionId = ref<string | null>(null)
+const renameTitle = ref('')
+const renameInputRef = ref<InstanceType<typeof import('element-plus').ElInput> | null>(null)
 
 async function loadSessions() {
   sessionLoading.value = true
@@ -251,39 +353,88 @@ function handleSelectSession(sessionId: string) {
   if (currentSessionId.value === sessionId) return
   currentSessionId.value = sessionId
   loadMessages(sessionId)
-  // 从会话中获取绑定的配置
-  const session = sessions.value.find(s => s.id === sessionId)
-  if (session) {
-    // 查找对应 configId
-    const match = configOptions.value.find(c =>
-      c.configName === session.configName && c.modelName === session.modelName
-    )
-    // 无法精确匹配 configId，先保留当前选择
-  }
 }
 
 function handleNewChat() {
-  // 停止当前流式
   abortStream()
   streaming.value = false
   streamingReasoning.value = ''
   currentSessionId.value = null
   messages.value = []
   inputContent.value = ''
+  handleClearSkill()
 }
 
-async function handleDeleteSession(sessionId: string) {
+// ========== 会话右键菜单 ==========
+function handleSessionCommand(cmd: string, session: ChatSessionVO) {
+  switch (cmd) {
+    case 'rename':
+      handleStartRename(session)
+      break
+    case 'delete':
+      handleDeleteSession(session)
+      break
+  }
+}
+
+async function handleDeleteSession(session: ChatSessionVO) {
   try {
-    const res = await deleteSession(sessionId)
+    await ElMessageBox.confirm(
+      `确定要删除对话「${session.title}」吗？此操作不可恢复。`,
+      '删除对话',
+      {
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger',
+      }
+    )
+
+    const res = await deleteSession(session.id)
     if (res.code !== 200) return
     ElMessage.success('已删除')
-    if (currentSessionId.value === sessionId) {
+    if (currentSessionId.value === session.id) {
       handleNewChat()
     }
     await loadSessions()
+  } catch (err: unknown) {
+    if (err !== 'cancel' && err !== 'close') {
+      // 拦截器已处理
+    }
+  }
+}
+
+// ========== 会话重命名（内联编辑） ==========
+function handleStartRename(session: ChatSessionVO) {
+  renamingSessionId.value = session.id
+  renameTitle.value = session.title
+  nextTick(() => {
+    renameInputRef.value?.focus()
+  })
+}
+
+async function handleRenameConfirm(sessionId: string) {
+  const title = renameTitle.value.trim()
+  if (!title) {
+    handleRenameCancel()
+    return
+  }
+  try {
+    const res = await updateSessionTitle(sessionId, title)
+    if (res.code === 200) {
+      ElMessage.success('已重命名')
+      renamingSessionId.value = null
+      renameTitle.value = ''
+      await loadSessions()
+    }
   } catch {
     // 拦截器已处理
   }
+}
+
+function handleRenameCancel() {
+  renamingSessionId.value = null
+  renameTitle.value = ''
 }
 
 // ========== 模型选择 ==========
@@ -307,7 +458,6 @@ async function loadConfigs() {
 }
 
 function handleConfigChange() {
-  // 模型切换时提示
   if (messages.value.length > 0) {
     ElMessage.info('已切换模型，后续消息将使用新模型回复')
   }
@@ -376,7 +526,6 @@ function scrollToBottom() {
   })
 }
 
-// Markdown 渲染
 marked.setOptions({
   breaks: true,
   gfm: true,
@@ -391,18 +540,37 @@ function renderMarkdown(text: string): string {
   }
 }
 
-// 发送消息
+async function copyMessage(content: string) {
+  try {
+    await navigator.clipboard.writeText(content)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    // 降级方案
+    const textarea = document.createElement('textarea')
+    textarea.value = content
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    try {
+      document.execCommand('copy')
+      ElMessage.success('已复制到剪贴板')
+    } catch {
+      ElMessage.error('复制失败')
+    }
+    document.body.removeChild(textarea)
+  }
+}
+
 async function handleSend() {
   const content = inputContent.value.trim()
   if (!content || !selectedConfigId.value || sending.value || streaming.value) return
 
-  // 有效性校验
   if (!selectedConfigId.value) {
     ElMessage.warning('请先选择大模型')
     return
   }
 
-  // 添加用户消息到界面
   const userMsg: ChatMessage & { _local?: boolean } = {
     id: '',
     sessionId: currentSessionId.value || '',
@@ -422,23 +590,18 @@ async function handleSend() {
   await nextTick()
   scrollToBottom()
 
-  // 发起 SSE 请求（携带 skillId）
   currentAbortController = sendChatMessage(
     currentSessionId.value,
     selectedConfigId.value,
     content,
-    // onMessage
     (chunk: string) => {
       streamingContent.value += chunk
       scrollToBottom()
     },
-    // onDone
     (data: { sessionId: string; messageId: string }) => {
-      // 如果是新会话，更新 currentSessionId
       if (!currentSessionId.value && data.sessionId) {
         currentSessionId.value = data.sessionId
       }
-      // 将流式内容落库为正式消息
       messages.value.push({
         id: data.messageId,
         sessionId: data.sessionId,
@@ -451,17 +614,14 @@ async function handleSend() {
       streamingReasoning.value = ''
       sending.value = false
       currentAbortController = null
-      // 刷新会话列表（新会话会置顶）
       loadSessions()
       scrollToBottom()
     },
-    // onError
     (error: string) => {
       ElMessage.error(error)
       streaming.value = false
       sending.value = false
       currentAbortController = null
-      // 保留已流式输出的部分
       if (streamingContent.value) {
         messages.value.push({
           id: '',
@@ -474,12 +634,10 @@ async function handleSend() {
         streamingReasoning.value = ''
       }
     },
-    // onReasoning
     (chunk: string) => {
       streamingReasoning.value += chunk
       scrollToBottom()
     },
-    // skillId
     selectedSkillId.value
   )
 }
@@ -534,7 +692,6 @@ function formatTime(dateStr: string): string {
 // ========== 配置弹窗 ==========
 const configDialogVisible = ref(false)
 
-// 监听配置弹窗关闭后刷新选项
 watch(configDialogVisible, (v) => {
   if (!v) loadConfigs()
 })
@@ -547,114 +704,63 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.chat-view {
-  display: flex;
-  height: 100%;
-  background-color: #fff;
-}
-
-/* ===== 左侧会话列表 ===== */
-.chat-sidebar {
-  width: 280px;
-  min-width: 280px;
+/* ================================================================
+   全局布局
+   ================================================================ */
+/* 左侧边栏定制 — 对齐 Wiki 风格 */
+.chat-session-list {
   display: flex;
   flex-direction: column;
-  border-right: 1px solid #e4e7ed;
-  background-color: #fafafa;
-}
-
-.sidebar-header {
-  padding: 12px;
-  border-bottom: 1px solid #e4e7ed;
-}
-
-.new-chat-btn {
-  width: 100%;
-}
-
-.session-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 0;
+  gap: 1px;
 }
 
 .session-item {
   display: flex;
   align-items: center;
-  padding: 10px 12px;
+  padding: 8px 10px;
   cursor: pointer;
-  transition: background-color 0.15s;
-  border-left: 3px solid transparent;
+  border-radius: 8px;
+  transition: all 0.18s ease;
+  min-height: 36px;
 }
 
 .session-item:hover {
-  background-color: #f0f2f5;
+  background-color: rgb(248 250 252);
 }
 
 .session-item.active {
-  background-color: #e6f4ff;
-  border-left-color: #409eff;
+  background-color: rgb(238 242 255);
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.12);
 }
 
-.session-content {
-  flex: 1;
-  min-width: 0;
+.session-item.active :deep(.el-icon) {
+  color: rgb(79 70 229);
 }
 
-.session-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: #303133;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-bottom: 4px;
+/* 重命名输入行 */
+.session-rename-row {
+  width: 100%;
 }
 
-.session-meta {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #909399;
+.session-rename-row :deep(.el-input__wrapper) {
+  background-color: #fff;
+  box-shadow: 0 0 0 1px #409eff inset;
 }
 
-.session-model {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100px;
-}
-
-.session-delete-btn {
-  opacity: 0;
-  transition: opacity 0.15s;
-  flex-shrink: 0;
-  margin-left: 4px;
-}
-
-.session-item:hover .session-delete-btn {
-  opacity: 1;
-}
-
-.empty-sessions {
-  text-align: center;
-  color: #909399;
-  padding: 40px 16px;
-  font-size: 13px;
-}
-
-.sidebar-footer {
-  padding: 10px 12px;
-  border-top: 1px solid #e4e7ed;
-  text-align: center;
-}
-
+/* 设置按钮 */
 .settings-btn {
   font-size: 13px;
-  color: #606266;
+  color: #909399;
+  transition: color 0.2s;
 }
 
-/* ===== 右侧聊天主区域 ===== */
+.settings-btn:hover {
+  color: #409eff;
+}
+
+/* ================================================================
+   右侧聊天主区域
+   ================================================================ */
 .chat-main {
   flex: 1;
   display: flex;
@@ -663,25 +769,103 @@ onMounted(() => {
   background-color: #fff;
 }
 
+/* ---------- 顶部模型选择器 ---------- */
 .chat-header {
   display: flex;
   align-items: center;
-  padding: 10px 20px;
-  border-bottom: 1px solid #e4e7ed;
-  background-color: #fafafa;
-  min-height: 52px;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 1px solid #ebeef5;
+  background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
+  min-height: 54px;
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.model-select-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background-color: #f5f6f8;
+  border-radius: 10px;
+  padding: 4px 6px 4px 14px;
+  transition: box-shadow 0.2s;
+}
+
+.model-select-wrapper:hover {
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.12);
+}
+
+.model-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #909399;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
 .model-select {
-  width: 300px;
+  width: 260px;
+}
+
+.model-select :deep(.el-input__wrapper) {
+  background-color: transparent;
+  box-shadow: none;
+  border-radius: 8px;
+  padding: 2px 8px;
+}
+
+.model-select :deep(.el-input__wrapper:hover) {
+  box-shadow: none;
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.model-select :deep(.el-input__inner) {
+  font-weight: 500;
+  color: #303133;
 }
 
 .no-config-hint {
-  font-size: 13px;
-  color: #909399;
-  margin-left: 12px;
+  font-size: 12px;
+  color: #c0c4cc;
+  font-style: italic;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.current-session-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #909399;
+  background-color: #f5f6f8;
+  padding: 5px 12px;
+  border-radius: 20px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #67c23a;
+  flex-shrink: 0;
+}
+
+/* ---------- 消息列表 ---------- */
 .chat-messages {
   flex: 1;
   overflow-y: auto;
@@ -758,7 +942,6 @@ onMounted(() => {
   box-shadow: 0 0 6px rgba(64, 158, 255, 0.2);
 }
 
-/* 消息体（含思考过程 + 气泡） */
 .message-body {
   flex: 1;
   min-width: 0;
@@ -823,6 +1006,45 @@ onMounted(() => {
   font-size: 12px;
 }
 
+/* 消息操作按钮（复制） */
+.message-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.message-row:hover .message-actions {
+  opacity: 1;
+}
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  background: transparent;
+  color: #909399;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  line-height: 1.4;
+}
+
+.copy-btn:hover {
+  color: #409eff;
+  border-color: #409eff;
+  background: rgba(64, 158, 255, 0.04);
+}
+
+.copy-btn:active {
+  color: #337ecc;
+  border-color: #337ecc;
+}
+
 /* Markdown 渲染样式 */
 .message-bubble :deep(pre) {
   background-color: #282c34;
@@ -882,94 +1104,211 @@ onMounted(() => {
   color: rgba(255, 255, 255, 0.8);
 }
 
-/* ===== 底部输入区 ===== */
+/* ================================================================
+   底部输入区
+   ================================================================ */
 .chat-input-area {
-  padding: 12px 20px;
-  border-top: 1px solid #e4e7ed;
+  padding: 0;
+  border-top: 1px solid #ebeef5;
   background-color: #fff;
-}
-
-.input-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.skill-badge {
-  margin-top: 6px;
-}
-
-.skill-add-btn {
-  color: #909399;
-  border-color: #dcdfe6;
-  transition: all 0.2s;
-}
-
-.skill-add-btn:hover {
-  color: #409eff;
-  border-color: #409eff;
-  background-color: #ecf5ff;
-}
-
-/* 已选 Skill 标签提示 */
-.skill-tag-hint {
-  margin-top: 8px;
   flex-shrink: 0;
 }
 
-.input-textarea {
-  flex: 1;
+.skill-active-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  background: linear-gradient(135deg, rgba(103, 194, 58, 0.06) 0%, rgba(103, 194, 58, 0.02) 100%);
+  border-bottom: 1px solid rgba(103, 194, 58, 0.12);
+  font-size: 12px;
 }
 
-.chat-input-area :deep(.el-textarea__inner) {
-  border-radius: 8px;
+.skill-active-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-/* Skill Popover 内容 */
+.skill-active-icon {
+  font-size: 14px;
+}
+
+.skill-active-label {
+  color: #909399;
+  font-weight: 500;
+}
+
+.skill-active-desc {
+  color: #b0b4bd;
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.input-container {
+  padding: 14px 20px;
+}
+
+.input-wrapper {
+  margin-bottom: 10px;
+}
+
+.input-textarea :deep(.el-textarea__inner) {
+  border-radius: 14px;
+  border: 2px solid #e4e7ed;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  background-color: #fafbfc;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  resize: none;
+  min-height: 52px !important;
+}
+
+.input-textarea :deep(.el-textarea__inner):hover {
+  border-color: #c6e2ff;
+  background-color: #fff;
+}
+
+.input-textarea :deep(.el-textarea__inner):focus {
+  border-color: #409eff;
+  box-shadow: 0 0 0 4px rgba(64, 158, 255, 0.08);
+  background-color: #fff;
+}
+
+.input-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.skill-trigger-btn {
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  color: #909399;
+  border-color: #e4e7ed;
+  background-color: #fafbfc;
+  transition: all 0.22s ease;
+}
+
+.skill-trigger-btn:hover {
+  color: #409eff;
+  border-color: #c6e2ff;
+  background-color: #ecf5ff;
+}
+
+.skill-trigger-btn.skill-active {
+  color: #67c23a;
+  border-color: #b3e19d;
+  background-color: rgba(103, 194, 58, 0.06);
+  font-weight: 600;
+}
+
+.skill-trigger-btn.skill-active:hover {
+  color: #5daf34;
+  border-color: #95d475;
+  background-color: rgba(103, 194, 58, 0.1);
+}
+
 .skill-popover-content {
-  max-height: 320px;
+  max-height: 360px;
   overflow-y: auto;
 }
 
-.skill-loading,
-.skill-empty {
-  text-align: center;
-  padding: 16px;
+.skill-popover-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  padding: 0 4px 10px 4px;
+  border-bottom: 1px solid #ebeef5;
+  margin-bottom: 6px;
+}
+
+.skill-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
   color: #909399;
   font-size: 13px;
 }
 
+.skill-empty {
+  text-align: center;
+  padding: 20px;
+  color: #909399;
+  font-size: 13px;
+}
+
+.skill-empty-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.skill-empty-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: #409eff;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.skill-empty-link:hover {
+  text-decoration: underline;
+}
+
 .skill-option {
-  padding: 8px 10px;
-  border-radius: 6px;
+  padding: 10px 10px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: background-color 0.15s;
+  transition: all 0.18s ease;
   margin-bottom: 2px;
 }
 
 .skill-option:hover {
-  background-color: #f0f2f5;
+  background-color: #f5f6f8;
 }
 
 .skill-option.selected {
-  background-color: #ecf5ff;
-  border: 1px solid #c6e2ff;
+  background-color: rgba(103, 194, 58, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(103, 194, 58, 0.2);
+}
+
+.skill-option-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .skill-option-name {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: #303133;
 }
 
 .skill-option.selected .skill-option-name {
-  color: #409eff;
+  color: #67c23a;
+}
+
+.skill-check {
+  font-size: 16px;
 }
 
 .skill-option-desc {
   font-size: 12px;
   color: #909399;
-  margin-top: 2px;
+  margin-top: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -977,27 +1316,75 @@ onMounted(() => {
 
 .skill-clear-row {
   text-align: center;
-  padding-top: 8px;
-  border-top: 1px solid #e4e7ed;
-  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid #ebeef5;
+  margin-top: 6px;
 }
 
-.input-actions {
+.toolbar-right {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 10px;
-  margin-top: 8px;
 }
 
 .streaming-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
+  font-weight: 500;
   color: #e6a23c;
-  animation: pulse 1.5s ease-in-out infinite;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+.streaming-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #e6a23c;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.3); }
+}
+
+.send-btn {
+  height: 36px;
+  padding: 0 20px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 10px rgba(64, 158, 255, 0.3);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 20px;
+}
+
+.send-btn:hover:not(:disabled) {
+  box-shadow: 0 4px 18px rgba(64, 158, 255, 0.45);
+  transform: translateY(-1px);
+}
+
+.send-btn:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 6px rgba(64, 158, 255, 0.3);
+}
+
+.send-icon {
+  margin-left: 4px;
+  font-size: 15px;
+}
+
+.stop-btn {
+  height: 36px;
+  padding: 0 20px;
+  font-weight: 600;
+  border-radius: 20px;
+  box-shadow: 0 2px 10px rgba(230, 162, 60, 0.3);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stop-btn:hover {
+  box-shadow: 0 4px 18px rgba(230, 162, 60, 0.45);
+  transform: translateY(-1px);
 }
 </style>
