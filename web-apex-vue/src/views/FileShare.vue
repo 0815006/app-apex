@@ -68,7 +68,7 @@
         <div class="list-header">
           <span class="list-title">
             <el-icon :size="18"><Files /></el-icon>
-            文件列表（{{ total }}）
+            文件列表
           </span>
           <el-input
             v-model="searchKeyword"
