@@ -1,7 +1,12 @@
 server:
-  port: 8080
+  port: 8081
 
 spring:
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: ${FILE_MAX_SIZE:200MB}
+      max-request-size: ${FILE_MAX_SIZE:200MB}
   application:
     name: java-apex-server
   threads:
@@ -32,3 +37,11 @@ mybatis-plus:
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
+
+# =============================================
+# Apex 自定义配置
+# =============================================
+apex:
+  file-share:
+    storage-path: ${FILE_STORAGE_PATH:D:\data\apex-v1\file-share}
+    max-file-size: ${FILE_MAX_SIZE:200MB}

@@ -20,6 +20,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'Wiki' },
       },
       {
+        path: 'fileshare',
+        name: 'FileShare',
+        component: () => import('@/views/FileShare.vue'),
+        meta: { title: '文件共享' },
+      },
+      {
         path: 'chat',
         name: 'Chat',
         component: () => import('@/views/ChatView.vue'),
