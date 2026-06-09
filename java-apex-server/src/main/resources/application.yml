@@ -45,3 +45,5 @@ apex:
   file-share:
     storage-path: ${FILE_STORAGE_PATH:D:\data\apex-v1\file-share}
     max-file-size: ${FILE_MAX_SIZE:200MB}
+  llm:
+    stream: ${LLM_STREAM_ENABLED:true}

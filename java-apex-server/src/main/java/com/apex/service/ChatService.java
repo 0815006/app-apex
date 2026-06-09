@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -47,6 +48,10 @@ public class ChatService {
     private final LlmService llmService;
     private final AiSkillMapper aiSkillMapper;
     private final ObjectMapper objectMapper;
+
+    /** LLM 是否开启流式输出，默认 true，可在 application.yml 中通过 apex.llm.stream 配置 */
+    @Value("${apex.llm.stream:true}")
+    private boolean llmStreamEnabled;
 
     /**
      * 获取当前用户的会话列表（按 update_time 倒序）。
@@ -240,7 +245,7 @@ public class ChatService {
                     return map;
                 })
                 .toList();
-        LlmRequest llmReq = LlmRequest.of(config.getModelName(), systemPrompt, historyMaps, content);
+        LlmRequest llmReq = LlmRequest.of(config.getModelName(), systemPrompt, historyMaps, content, llmStreamEnabled);
 
         // 8. 创建 SseEmitter（超时 5 分钟）
         SseEmitter emitter = new SseEmitter(300_000L);
@@ -287,12 +292,15 @@ public class ChatService {
                 java.util.stream.Stream<String> lines = httpResponse.body();
                 try (lines) {
                     java.util.Iterator<String> iterator = lines.iterator();
+                    boolean sawSseData = false;
+                    StringBuilder plainJsonBuffer = new StringBuilder();
                     while (iterator.hasNext()) {
                         String line = iterator.next();
                         if (line.isEmpty()) {
                             continue;
                         }
                         if (line.startsWith("data: ")) {
+                            sawSseData = true;
                             String data = line.substring(6);
                             if ("[DONE]".equals(data)) {
                                 break;
@@ -325,6 +333,33 @@ public class ChatService {
                             } catch (Exception parseEx) {
                                 log.warn("解析 LLM 响应 JSON 失败: {}", parseEx.getMessage());
                             }
+                        } else if (!sawSseData) {
+                            // 尚未见到 SSE data 行，收集普通行用于非流式回退解析
+                            plainJsonBuffer.append(line);
+                        }
+                    }
+
+                    // 非流式回退解析：若整个响应未出现任何 SSE data 行，
+                    // 则将其视为普通 JSON 格式的非流式响应进行解析
+                    if (!sawSseData && !plainJsonBuffer.isEmpty()) {
+                        try {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> jsonMap = objectMapper.readValue(plainJsonBuffer.toString(), Map.class);
+                            @SuppressWarnings("unchecked")
+                            var choices = (List<Map<String, Object>>) jsonMap.get("choices");
+                            if (choices != null && !choices.isEmpty()) {
+                                // 非流式响应使用 message 而非 delta
+                                var message = (Map<String, Object>) choices.get(0).get("message");
+                                if (message != null && message.get("content") != null) {
+                                    String assistantContent = (String) message.get("content");
+                                    fullResponse.append(assistantContent);
+                                    emitter.send(SseEmitter.event()
+                                            .name("message")
+                                            .data(assistantContent));
+                                }
+                            }
+                        } catch (Exception parseEx) {
+                            log.warn("解析非流式 LLM 响应 JSON 失败: {}", parseEx.getMessage());
                         }
                     }
                 }
