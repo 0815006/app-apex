@@ -123,6 +123,9 @@
                       <el-dropdown-item command="rename">
                         <el-icon class="mr-1"><Edit /></el-icon>重命名
                       </el-dropdown-item>
+                      <el-dropdown-item command="export" v-if="data.type === 2">
+                        <el-icon class="mr-1"><Download /></el-icon>导出 Markdown
+                      </el-dropdown-item>
                       <el-dropdown-item command="delete" class="!text-red-500">
                         <el-icon class="mr-1"><Delete /></el-icon>删除
                       </el-dropdown-item>
@@ -290,6 +293,7 @@ import {
   EditPen,
   CaretTop,
   CaretBottom,
+  Download,
 } from '@element-plus/icons-vue'
 import {
   getWikiTree,
@@ -557,6 +561,9 @@ const handleCommand = (cmd: string, data: WikiNodeVO) => {
       break
     case 'rename':
       openDialog('rename', data)
+      break
+    case 'export':
+      handleExport(data)
       break
     case 'delete':
       handleDelete(data)
@@ -925,6 +932,35 @@ const handleMoveDown = async (data: WikiNodeVO) => {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : '请求失败'
     ElMessage.error('下移失败：' + msg)
+  } finally {
+    loading.value = false
+  }
+}
+
+// ==================== Markdown 导出 ====================
+
+const handleExport = async (data: WikiNodeVO) => {
+  if (!data.id) return
+  loading.value = true
+  try {
+    const res = await getDocDetail(data.id)
+    if (res.code === 200 && res.data) {
+      const doc = res.data
+      const blob = new Blob([doc.content || ''], { type: 'text/markdown;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${doc.title || 'untitled'}.md`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+      ElMessage.success('导出成功')
+    } else {
+      ElMessage.error('导出失败：无法获取文档内容')
+    }
+  } catch {
+    ElMessage.error('导出失败')
   } finally {
     loading.value = false
   }
