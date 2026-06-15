@@ -1,3 +1,4 @@
+:: 部署前端到腾讯云服务器
 @echo off
 chcp 65001 > nul
 set SERVER_IP=129.211.9.238
