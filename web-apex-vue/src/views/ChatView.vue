@@ -65,7 +65,7 @@
               </span>
               <!-- hover 操作区域：下拉菜单 -->
               <span class="flex items-center gap-0.5 shrink-0">
-                <el-dropdown trigger="click" @command="(cmd) => handleSessionCommand(String(cmd), session)">
+                <el-dropdown trigger="click" @command="(cmd: string) => handleSessionCommand(cmd, session)">
                   <el-icon class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 transition-opacity shrink-0 ml-1">
                     <MoreFilled />
                   </el-icon>

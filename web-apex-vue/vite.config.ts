@@ -10,10 +10,10 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 8083,
     proxy: {
       '/api': {
-        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8081',
+        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8093',
         changeOrigin: true,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq, req) => {
