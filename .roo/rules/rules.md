@@ -86,12 +86,39 @@ AI 在处理、重构或引用系统级主架构时，必须严格保持以下�
 
 ## 4. 工程化与部署
 ### 4.1 自动化部署
-* **Dockerfile**：采用多阶段构建（JDK 21 编译，JRE 21 运行）。
-* **Docker Compose**：提供一键启动脚本，包含 `app`, `nginx`, `mysql 8.4`, `redis 7.2`。
-* **网络隔离**：数据库和 Redis 仅在 Docker 内部网络开放。
+* **Dockerfile**：腾讯云使用单阶段构建（JRE 21 运行），本地 Maven 编译后 SCP 上传 JAR 包。本地 Docker Compose 环境使用 `java-apex-server/Dockerfile` 多阶段构建。
+* **Docker Compose**：提供一键启动脚本，包含 `app`, `nginx`, `mysql 8.4`。
+* **网络隔离**：生产环境中数据库仅在 Docker 内部网络开放，**禁止**将 MySQL 端口映射到宿主机。本地开发环境（`docker-compose.yml`）允许映射 `3306` 端口以便调试工具连接。
 
 ### 4.2 代理配置
 * **Vite 配置**：在 `vite.config.ts` 配置 `server.proxy` 将 `/api` 请求代理到后端。**禁止硬编码 `localhost`**。
+
+### 4.3 多环境部署与脚本编写规范
+
+#### 4.3.1 项目交付架构与目录规范
+- 所有面向本地或内网（LAN）环境编译打包的最终成品，必须严格输出到 `bin/` 目录下：
+  - `bin/web-dist/`：存放纯前端 Web 静态资源。
+  - `bin/backend-server/`：存放 Java 后端 JAR 包及 WinSW 后台服务注册相关文件。
+  - `bin/client-lan/`：存放专为内网环境（指定 IP 变体）生成的客户端可执行文件（.exe）。
+- 所有的部署脚本、自动化批处理文件、Nginx 配置文件，必须全部存放在 `deploy/` 目录下。
+
+#### 4.3.2 脚本命名硬性规范
+在编写或修改任何部署/打包脚本时，必须严格遵守以下命名动宾结构，禁止使用模糊的名称（如 "deploy.bat" 或 "build.sh"）：
+- **内网/本地环境（本地落盘）**：统一使用 `build-[对象]-[环境].bat` 格式。
+  - 示例：`build-server-lan.bat`、`build-web-lan.bat`、`build-client-lan.bat`。
+- **腾讯云环境（远程一键流）**：统一使用 `deploy-[对象]-[环境].bat` 格式。
+  - 示例：`deploy-server-tencent.bat`。
+
+#### 4.3.3 技术栈特定约束
+* **后端 (Java)**：针对本地长期挂载的 Windows 系统服务，必须在启动参数中显式限制 JVM 内存（例如 `-Xms256m -Xmx512m`），防止内存溢出。
+* **前端 (Vue/Vite)**：
+  - 针对本地局域网联调环境，`vite.config.ts` 中的 `server.host` 必须配置为 `'0.0.0.0'`，以允许外部 Nginx 摆渡流量接入。
+  - 必须妥善处理大模型流式响应接口（如 `/chat/send`），确保代理层不开启压缩和缓存缓冲，实现打字机效果逐块流式传递。
+
+#### 4.3.4 网络与部署逻辑
+* **腾讯云部署**：采用纯自动化远程流。脚本执行时在本地临时编译后，直接通过 SSH/SCP 推送到云端服务器并触发远程重启命令。**绝对不能**将腾讯云的编译产物遗留或污染到本地的 `bin/` 目录中。
+* **内网 Windows 与 Linux 摆渡**：本地 Windows Nginx 负责托管 `bin/web-dist` 并代理接口；公共 Linux 服务器的 Nginx 仅作为"流量传话筒"，将信创机等外部访问无脑反向代理回本地 Windows 机器，且必须针对 AI 流式接口配置 `proxy_buffering off;`。
+
 
 ## 5. 数据替换与修改逻辑 (AI 执行指令)
 1. **去 Mock化**：识别页面静态假数据，在 `onMounted` 中调用 `src/api/` 里的 TS 函数获取真实数据。
