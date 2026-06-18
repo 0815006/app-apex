@@ -11,6 +11,7 @@ export default defineConfig({
   },
   server: {
     port: 8083,
+    host: '0.0.0.0', // 👈 必须加这一行！允许局域网内的 Linux 服务器访问你
     proxy: {
       '/api': {
         target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8093',
