@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="apex-grad" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#0d47a1"/>
+      <stop offset="35%" stop-color="#1565c0"/>
+      <stop offset="65%" stop-color="#1e88e5"/>
+      <stop offset="100%" stop-color="#42a5f5"/>
+    </linearGradient>
+    <linearGradient id="apex-grad-light" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#1565c0"/>
+      <stop offset="35%" stop-color="#1e88e5"/>
+      <stop offset="65%" stop-color="#42a5f5"/>
+      <stop offset="100%" stop-color="#64b5f6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 三层全栈横条（底部 → 顶部：数据层、服务层、展示层） -->
+  <!-- 第1层：数据/基础设施层 -->
+  <rect x="16" y="96" width="96" height="10" rx="4" fill="url(#apex-grad)" opacity="0.45"/>
+
+  <!-- 第2层：服务/业务层 -->
+  <rect x="22" y="80" width="84" height="10" rx="4" fill="url(#apex-grad)" opacity="0.65"/>
+
+  <!-- 第3层：展示/前端层 -->
+  <rect x="28" y="64" width="72" height="10" rx="4" fill="url(#apex-grad)" opacity="0.85"/>
+
+  <!-- 顶峰箭头：象征敏捷攀登 -->
+  <path d="M64 12 L104 62 L80 62 L80 68 L48 68 L48 62 L24 62 Z"
+        fill="url(#apex-grad-light)" stroke="url(#apex-grad)" stroke-width="1.5"
+        stroke-linejoin="round"/>
+
+  <!-- 顶部高光亮片 -->
+  <path d="M64 20 L84 52 L74 52 L74 56 L54 56 L54 52 L44 52 Z"
+        fill="white" opacity="0.18"/>
+</svg>

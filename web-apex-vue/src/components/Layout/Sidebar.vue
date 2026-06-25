@@ -1,6 +1,7 @@
 <template>
   <div class="sidebar-container">
     <div class="sidebar-logo">
+      <img src="/apex-logo.svg" alt="Apex" class="logo-icon" />
       <span class="logo-text">Apex</span>
     </div>
     <el-menu
@@ -54,7 +55,14 @@ const activeMenu = computed(() => route.path)
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logo-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
 }
 
 .logo-text {
