@@ -82,7 +82,7 @@
 - 后端以 **Docker 容器** 运行（单阶段 JRE 镜像），MySQL 和 Nginx 在宿主机直接安装
 - DB 连接通过 `--add-host=host.docker.internal:host-gateway` 从容器访问宿主机 MySQL
 - 文件共享目录 `/data/apex/file-share` 挂载到容器
-- 前端通过 `deploy/nginx-apex.conf` 配置 Nginx
+- 前端通过 `deploy/nginx-apex-tencent.conf` 配置 Nginx
 
 ---
 
@@ -285,10 +285,10 @@ docker run -d \
 |------|------|------|
 | [1/3] | `npm run build` | 本地 Vite 生产构建 → `dist/` |
 | [2/3] | `scp -r dist/* → /var/www/app-apex/dist/` | 上传静态资源 |
-| [3/3] | `scp nginx-apex.conf → /etc/nginx/conf.d/app-apex.conf` | 上传 Nginx 配置 |
+| [3/3] | `scp nginx-apex-tencent.conf → /etc/nginx/conf.d/app-apex.conf` | 上传 Nginx 配置 |
 | [3/3] | `nginx -t && nginx -s reload` | 验证配置并热重载 |
 
-**Nginx 配置** ([`deploy/nginx-apex.conf`](deploy/nginx-apex.conf))：
+**Nginx 配置** ([`deploy/nginx-apex-tencent.conf`](deploy/nginx-apex-tencent.conf))：
 
 - 监听端口 **8083**（域名 `realapex.site` 走 80 端口时也兼容）
 - `/` → 静态文件 `/var/www/app-apex/dist/`（Vue Router History 模式）
@@ -501,7 +501,7 @@ lsof -i :80 -i :8083 -i :8093 -i :3306
 - 后端：修改 [`application.yml`](java-apex-server/src/main/resources/application.yml:2) `server.port`
 - 前端开发模式：修改 [`vite.config.ts`](web-apex-vue/vite.config.ts:13) `server.port`
 - Docker Compose：修改 [`docker-compose.yml`](deploy/docker-compose.yml:9) `ports` 映射
-- 云端 Nginx：修改 [`nginx-apex.conf`](deploy/nginx-apex.conf:10) `listen` 端口
+- 云端 Nginx：修改 [`nginx-apex-tencent.conf`](deploy/nginx-apex-tencent.conf:10) `listen` 端口
 
 ### 10.6 云端文件共享不可用
 
@@ -528,7 +528,7 @@ app-apex/
 │   ├── cloud-dockerfile                  # 模式 B：云端单阶段构建
 │   ├── deploy_cloud_backend.bat          # 模式 B：后端部署脚本（Windows）
 │   ├── deploy_cloud_frontend.bat         # 模式 B：前端部署脚本（Windows）
-│   └── nginx-apex.conf                  # 模式 B：云端 Nginx 配置
+│   └── nginx-apex-tencent.conf          # 模式 B：云端 Nginx 配置
 ├── docs/
 │   ├── DEPLOYMENT.md                     # 本文档
 │   └── RELEASE_NODE.md

@@ -28,7 +28,7 @@ scp -r "%~dp0..\web-apex-vue\dist\*" root@%SERVER_IP%:%SERVER_DIR%/
 echo ===================================================
 echo [3/3] 正在上传 Nginx 配置并重载...
 echo ===================================================
-scp "%~dp0nginx-apex.conf" root@%SERVER_IP%:/etc/nginx/conf.d/app-apex.conf
+scp "%~dp0nginx-apex-tencent.conf" root@%SERVER_IP%:/etc/nginx/conf.d/app-apex.conf
 ssh root@%SERVER_IP% "nginx -t && nginx -s reload"
 
 echo ===================================================

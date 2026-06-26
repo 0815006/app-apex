@@ -27,6 +27,9 @@ web-apex-vue/npm-debug.log*
 # ===== Docker =====
 docker/data/
 
+# ===== 构建产物 =====
+bin/
+
 # ===== Environment =====
 .env
 .env.production

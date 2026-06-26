@@ -203,26 +203,37 @@ echo pause
 echo   ✅ startServer.bat / stopServer.bat 已生成
 echo.
 
+:: ========== Step 6: 复制 WinSW 可执行文件 ==========
+echo [6/6] ⚙️  复制 WinSW 可执行文件...
+set "WINSW_SRC=%PROJECT_ROOT%\deploy\WinSW-x64.exe"
+set "WINSW_DST=%OUT_DIR%\ApexServer.exe"
+
+if exist "%WINSW_SRC%" (
+    copy /y "%WINSW_SRC%" "%WINSW_DST%" >nul
+    echo   deploy\WinSW-x64.exe → %OUT_DIR%\ApexServer.exe
+    echo   ✅ WinSW 已自动部署
+) else (
+    echo   ⚠️  未找到 deploy\WinSW-x64.exe，请从以下地址下载后放入 deploy 目录:
+    echo      https://github.com/winsw/winsw/releases
+)
+echo.
+
 :: ========== 输出完成信息 ==========
 echo ==================================================
 echo   🏁  构建完成！内网后端 Server 版本
 echo ==================================================
 echo.
-echo   📌 构建产物目录 (临时): %OUT_DIR%\
+echo   📌 构建产物目录: %OUT_DIR%\
+echo         ├── ApexServer.exe        (WinSW 可执行文件^)
 echo         ├── apex-server.jar       (Spring Boot JAR^)
 echo         ├── ApexServer.xml        (WinSW 服务定义^)
 echo         ├── startServer.bat       (安装 + 启动^)
 echo         └── stopServer.bat        (停止 + 卸载^)
 echo.
-echo   ⚠️  部署前手动操作:
-echo       1. 下载 WinSW: https://github.com/winsw/winsw/releases
-echo       2. 将 WinSW-Windows-x64.exe 复制到 %OUT_DIR%\
-echo       3. 重命名为 ApexServer.exe
-echo.
 echo   📌 部署步骤:
 echo       1. 将 bin\apex-server\ 下所有文件复制到 %DEPLOY_DIR%\
 echo       2. 以管理员身份运行 %DEPLOY_DIR%\startServer.bat
-echo       3. 浏览器验证: http://服务器IP:%SERVER_PORT%/api/health
+echo       3. 浏览器验证: http://localhost:%SERVER_PORT%/api/health
 echo.
 echo   💡 修改参数: 编辑本 bat 头部 set 变量，重新构建即可
 echo   💡 手动运行: java -jar apex-server.jar  (开发调试用^)
