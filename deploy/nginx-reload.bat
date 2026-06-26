@@ -18,12 +18,7 @@ if %errorlevel% neq 0 (
 )
 
 echo Listening ports:
-setlocal enabledelayedexpansion
-for /f "tokens=2" %%p in ('tasklist /fi "imagename eq nginx.exe" /fo table /nh 2^>nul') do (
-    set "pid=%%p"
-    for /f "tokens=2" %%a in ('netstat -ano ^| findstr "LISTENING" ^| findstr /r /c:"[^^0-9]!pid!$"') do echo     %%a
-)
-endlocal
+for /f "tokens=2" %%p in ('tasklist /fi "imagename eq nginx.exe" /fo table /nh 2^>nul') do call :showport %%p
 echo.
 
 echo [1/2] Checking config ...
@@ -54,3 +49,7 @@ echo [ OK ] Nginx Config Reloaded
 echo.
 pause
 exit /b 0
+
+:showport
+for /f "tokens=2" %%a in ('netstat -ano ^| findstr "LISTENING" ^| findstr /r /c:"[^^0-9]%1$"') do echo     %%a
+goto :eof
