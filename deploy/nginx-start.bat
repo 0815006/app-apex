@@ -53,13 +53,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo ✅ Nginx 已启动
-echo   当前监听端口：
-setlocal enabledelayedexpansion
-for /f "tokens=2 delims=," %%p in ('tasklist /fi "imagename eq nginx.exe" /fo csv /nh 2^>nul') do (
-    set "pid=%%~p"
-    for /f "tokens=2" %%a in ('netstat -ano ^| findstr "LISTENING" ^| findstr "!pid!"') do echo     %%a
-)
-endlocal
+echo   配置文件位于 conf.d/ 目录，各 server 端口请查看对应 .conf
 echo.
 pause
 exit /b 0
