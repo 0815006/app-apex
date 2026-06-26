@@ -7,7 +7,7 @@ set ZIP_NAME=apex-source.zip
 
 echo ==================================================
 echo   正在打包源码项目...
-echo   排除目录: java-apex-server/target, web-apex-vue/node_modules
+echo   排除目录: java-apex-server/target, web-apex-vue/node_modules, web-apex-vue/dist
 echo ==================================================
 
 :: 如果旧的压缩包存在，先删除
@@ -24,6 +24,7 @@ if exist %ZIP_NAME% (
 tar -acvf %ZIP_NAME% ^
     --exclude="*/target" ^
     --exclude="*/node_modules" ^
+    --exclude="*/dist" ^
     java-* web-*
 
 if %ERRORLEVEL% equ 0 (
