@@ -9,6 +9,15 @@ echo   工作目录: %cd%
 echo ==========================================
 echo.
 
+:: 检查 Nginx 是否在运行
+tasklist /fi "imagename eq nginx.exe" 2>nul | find /i "nginx.exe" >nul
+if %errorlevel% neq 0 (
+    echo ❌ Nginx 未在运行，请先执行 nginx-start.bat。
+    echo.
+    pause
+    exit /b 1
+)
+
 echo [1/2] 校验配置文件...
 nginx -t
 if %errorlevel% neq 0 (
@@ -20,10 +29,14 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [2/2] 发送重载信号...
-nginx -s reload
+nginx -s reload 2>nul
 if %errorlevel% neq 0 (
     echo.
-    echo ❌ 重载失败！请检查 Nginx 是否已启动。
+    echo ⚠️  热重载失败（PID 文件可能异常）！
+    echo   建议改用重启方式：
+    echo     1. 执行 nginx-stop.bat 停止
+    echo     2. 执行 nginx-start.bat 启动
+    echo.
     pause
     exit /b 1
 )
