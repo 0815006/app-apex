@@ -47,3 +47,6 @@ apex:
     max-file-size: ${FILE_MAX_SIZE:200MB}
   llm:
     stream: ${LLM_STREAM_ENABLED:true}
+  monitor:
+    scheduler:
+      enabled: true

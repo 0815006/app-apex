@@ -31,6 +31,14 @@
         <el-icon><MagicStick /></el-icon>
         <span>Skill工具</span>
       </el-menu-item>
+      <el-menu-item index="/monitor">
+        <el-icon><Monitor /></el-icon>
+        <span>容量监控</span>
+      </el-menu-item>
+      <el-menu-item index="/monitor-trend">
+        <el-icon><TrendCharts /></el-icon>
+        <span>监控走势</span>
+      </el-menu-item>
     </el-menu>
   </div>
 </template>

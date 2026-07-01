@@ -37,6 +37,18 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/SkillManager.vue'),
         meta: { title: 'Skill 管理' },
       },
+      {
+        path: 'monitor',
+        name: 'CapacityMonitor',
+        component: () => import('@/views/CapacityMonitor.vue'),
+        meta: { title: '容量监控' },
+      },
+      {
+        path: 'monitor-trend',
+        name: 'MonitorTrend',
+        component: () => import('@/views/MonitorTrend.vue'),
+        meta: { title: '监控走势' },
+      },
     ],
   },
   {
