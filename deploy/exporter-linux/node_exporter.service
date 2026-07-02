@@ -1,0 +1,19 @@
+[Unit]
+Description=Node Exporter (Apex Monitor)
+Documentation=https://prometheus.io/docs/guides/node-exporter/
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=__BASE__/node_exporter --web.listen-address=:9100 --collector.textfile.directory=__BASE__/textfile
+Restart=always
+RestartSec=5
+
+# 安全加固 (可选，按需放开)
+# NoNewPrivileges=true
+# ProtectSystem=strict
+# ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

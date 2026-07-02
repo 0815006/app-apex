@@ -92,6 +92,9 @@ public final class MetricDictionary {
         PREFIX_RULES.put("node_netstat_Tcp_",     MetricCategory.PORT);
         PREFIX_RULES.put("node_sockstat_TCP_",    MetricCategory.PORT);
         PREFIX_RULES.put("windows_tcp_",          MetricCategory.PORT);
+        // Textfile Collector 注入的监听端口指标
+        PREFIX_RULES.put("node_listening_port",   MetricCategory.PORT);
+        PREFIX_RULES.put("windows_listening_port",MetricCategory.PORT);
 
         // Network
         PREFIX_RULES.put("node_network_",         MetricCategory.NETWORK);
@@ -190,6 +193,25 @@ public final class MetricDictionary {
         entry(list, "node_memory_VmallocTotal_bytes",  "Vmalloc总量(字节)");
         entry(list, "node_memory_VmallocUsed_bytes",   "Vmalloc使用(字节)");
         entry(list, "node_memory_VmallocChunk_bytes",  "Vmalloc最大块(字节)");
+        entry(list, "node_memory_Active_anon_bytes",    "活跃匿名页(字节)");
+        entry(list, "node_memory_Active_file_bytes",    "活跃文件页(字节)");
+        entry(list, "node_memory_AnonHugePages_bytes",  "匿名大页(字节)");
+        entry(list, "node_memory_Bounce_bytes",          "Bounce缓冲区(字节)");
+        entry(list, "node_memory_CommitLimit_bytes",     "提交内存上限(字节)");
+        entry(list, "node_memory_Committed_AS_bytes",    "已提交地址空间(字节)");
+        entry(list, "node_memory_DirectMap1G_bytes",     "DirectMap 1G页(字节)");
+        entry(list, "node_memory_DirectMap2M_bytes",     "DirectMap 2M页(字节)");
+        entry(list, "node_memory_DirectMap4k_bytes",     "DirectMap 4K页(字节)");
+        entry(list, "node_memory_HardwareCorrupted_bytes","硬件损坏内存(字节)");
+        entry(list, "node_memory_Inactive_anon_bytes",   "非活跃匿名页(字节)");
+        entry(list, "node_memory_Inactive_file_bytes",   "非活跃文件页(字节)");
+        entry(list, "node_memory_Mlocked_bytes",          "锁定内存(字节)");
+        entry(list, "node_memory_NFS_Unstable_bytes",     "NFS不稳定页(字节)");
+        entry(list, "node_memory_Percpu_bytes",           "Per-CPU分配(字节)");
+        entry(list, "node_memory_ShmemHugePages_bytes",   "共享内存大页(字节)");
+        entry(list, "node_memory_ShmemPmdMapped_bytes",   "共享内存PMD映射(字节)");
+        entry(list, "node_memory_Unevictable_bytes",      "不可回收内存(字节)");
+        entry(list, "node_memory_WritebackTmp_bytes",     "临时回写页(字节)");
 
         // ==================== Disk IO ====================
         entry(list, "node_disk_read_bytes_total",              "磁盘读取字节总数");
@@ -204,6 +226,12 @@ public final class MetricDictionary {
         entry(list, "node_disk_reads_merged_total",            "磁盘读合并数");
         entry(list, "node_disk_writes_merged_total",           "磁盘写合并数");
         entry(list, "node_disk_info",                          "磁盘设备信息");
+        entry(list, "node_disk_discarded_sectors_total",       "磁盘废弃扇区总数");
+        entry(list, "node_disk_discards_completed_total",      "磁盘废弃操作完成次数");
+        entry(list, "node_disk_discards_merged_total",         "磁盘废弃合并数");
+        entry(list, "node_disk_flush_requests_total",          "磁盘Flush请求总数");
+        entry(list, "node_disk_io_now",                        "磁盘当前IO数");
+        entry(list, "node_disk_io_time_weighted_seconds_total","磁盘IO加权耗时(秒)");
 
         // ==================== Filesystem ====================
         entry(list, "node_filesystem_size_bytes",    "文件系统总容量(字节)");
@@ -213,6 +241,8 @@ public final class MetricDictionary {
         entry(list, "node_filesystem_files_free",    "文件系统inode空闲");
         entry(list, "node_filesystem_readonly",      "文件系统只读");
         entry(list, "node_filesystem_device_error",  "文件系统设备错误");
+        entry(list, "node_filesystem_mount_info",    "文件系统挂载信息");
+        entry(list, "node_filesystem_purgeable_bytes","文件系统可清除(字节)");
 
         // ==================== Network ====================
         entry(list, "node_network_receive_bytes_total",    "网络接收字节总数");
@@ -228,6 +258,29 @@ public final class MetricDictionary {
         entry(list, "node_network_info",                   "网卡信息");
         entry(list, "node_network_carrier",                "网卡载波");
         entry(list, "node_network_iface_id",               "网卡接口ID");
+        entry(list, "node_network_carrier_changes_total",     "载波变化总数");
+        entry(list, "node_network_carrier_down_changes_total","载波断开次数");
+        entry(list, "node_network_carrier_up_changes_total",  "载波连接次数");
+        entry(list, "node_network_device_id",                 "网卡设备ID");
+        entry(list, "node_network_dormant",                   "网卡休眠状态");
+        entry(list, "node_network_flags",                     "网卡标志位");
+        entry(list, "node_network_iface_link",                "网卡链路状态");
+        entry(list, "node_network_iface_link_mode",           "网卡链路模式");
+        entry(list, "node_network_name_assign_type",          "网卡名称分配类型");
+        entry(list, "node_network_net_dev_group",             "网卡设备组");
+        entry(list, "node_network_protocol_type",              "网卡协议类型");
+        entry(list, "node_network_receive_compressed_total",   "网络接收压缩包总数");
+        entry(list, "node_network_receive_fifo_total",         "网络接收FIFO错误");
+        entry(list, "node_network_receive_frame_total",        "网络接收帧对齐错误");
+        entry(list, "node_network_receive_multicast_total",    "网络接收多播包总数");
+        entry(list, "node_network_transmit_carrier_total",     "网络发送载波错误");
+        entry(list, "node_network_transmit_compressed_total",  "网络发送压缩包总数");
+        entry(list, "node_network_transmit_fifo_total",        "网络发送FIFO错误");
+        entry(list, "node_network_address_assign_type",         "网卡地址分配类型");
+        entry(list, "node_network_receive_nohandler_total",     "网络接收无处理器丢包");
+        entry(list, "node_network_transmit_colls_total",        "网络发送冲突总数");
+        entry(list, "node_network_transmit_queue_length",      "网络发送队列长度");
+        entry(list, "node_network_up",                         "网卡启用状态");
 
         // ==================== Netstat ====================
         entry(list, "node_netstat_Icmp_InMsgs",     "ICMP入站消息");
@@ -235,6 +288,46 @@ public final class MetricDictionary {
         entry(list, "node_netstat_Udp_InDatagrams", "UDP入站数据报");
         entry(list, "node_netstat_Udp_OutDatagrams","UDP出站数据报");
         entry(list, "node_netstat_Ip_Forwarding",   "IP转发");
+        // -- ICMP6/ICMP --
+        entry(list, "node_netstat_Icmp6_InErrors",   "ICMPv6入站错误");
+        entry(list, "node_netstat_Icmp6_InMsgs",     "ICMPv6入站消息");
+        entry(list, "node_netstat_Icmp6_OutMsgs",    "ICMPv6出站消息");
+        entry(list, "node_netstat_Icmp_InErrors",    "ICMP入站错误");
+        // -- IP6/IpExt --
+        entry(list, "node_netstat_Ip6_InOctets",     "IPv6入站字节");
+        entry(list, "node_netstat_Ip6_OutOctets",    "IPv6出站字节");
+        entry(list, "node_netstat_IpExt_InOctets",   "IP扩展入站字节");
+        entry(list, "node_netstat_IpExt_OutOctets",  "IP扩展出站字节");
+        // -- TcpExt --
+        entry(list, "node_netstat_TcpExt_ListenDrops",     "TCP监听丢弃");
+        entry(list, "node_netstat_TcpExt_ListenOverflows", "TCP监听溢出");
+        entry(list, "node_netstat_TcpExt_SyncookiesFailed","TCP Syncookie失败");
+        entry(list, "node_netstat_TcpExt_SyncookiesRecv",  "TCP Syncookie接收");
+        entry(list, "node_netstat_TcpExt_SyncookiesSent",  "TCP Syncookie发送");
+        entry(list, "node_netstat_TcpExt_TCPOFOQueue",     "TCP乱序队列");
+        entry(list, "node_netstat_TcpExt_TCPRcvQDrop",     "TCP接收队列丢弃");
+        entry(list, "node_netstat_TcpExt_TCPSynRetrans",   "TCP SYN重传");
+        entry(list, "node_netstat_TcpExt_TCPTimeouts",     "TCP超时次数");
+        // -- Tcp --
+        entry(list, "node_netstat_Tcp_ActiveOpens",  "TCP主动打开数");
+        entry(list, "node_netstat_Tcp_InErrs",       "TCP入站错误");
+        entry(list, "node_netstat_Tcp_OutRsts",      "TCP出站RST");
+        entry(list, "node_netstat_Tcp_PassiveOpens", "TCP被动打开数");
+        // -- UDP6 --
+        entry(list, "node_netstat_Udp6_InDatagrams",  "UDPv6入站数据报");
+        entry(list, "node_netstat_Udp6_InErrors",     "UDPv6入站错误");
+        entry(list, "node_netstat_Udp6_NoPorts",      "UDPv6无端口");
+        entry(list, "node_netstat_Udp6_OutDatagrams", "UDPv6出站数据报");
+        entry(list, "node_netstat_Udp6_RcvbufErrors", "UDPv6接收缓冲错误");
+        entry(list, "node_netstat_Udp6_SndbufErrors", "UDPv6发送缓冲错误");
+        // -- UDP --
+        entry(list, "node_netstat_Udp_InErrors",     "UDP入站错误");
+        entry(list, "node_netstat_Udp_NoPorts",      "UDP无端口");
+        entry(list, "node_netstat_Udp_RcvbufErrors", "UDP接收缓冲错误");
+        entry(list, "node_netstat_Udp_SndbufErrors", "UDP发送缓冲错误");
+        // -- UDP-Lite --
+        entry(list, "node_netstat_UdpLite6_InErrors", "UDP-Litev6入站错误");
+        entry(list, "node_netstat_UdpLite_InErrors",  "UDP-Lite入站错误");
 
         // ==================== System ====================
         entry(list, "node_boot_time_seconds",            "系统启动时间戳");
@@ -250,8 +343,26 @@ public final class MetricDictionary {
         entry(list, "node_arp_entries",                  "ARP表条目数");
         entry(list, "node_os_info",                      "操作系统信息");
         entry(list, "node_uname_info",                   "系统uname信息");
+        entry(list, "node_os_version",                   "操作系统版本号");
         entry(list, "node_selinux_enabled",              "SELinux状态");
         entry(list, "node_time_zone_offset_seconds",     "时区偏移(秒)");
+        entry(list, "node_cooling_device_cur_state",     "散热设备当前状态");
+        entry(list, "node_cooling_device_max_state",     "散热设备最大状态");
+        entry(list, "node_dmi_info",                     "DMI硬件信息");
+        entry(list, "node_entropy_pool_size_bits",       "熵池大小(位)");
+        entry(list, "node_exporter_build_info",          "Node Exporter构建信息");
+        entry(list, "node_processes_max_processes",      "进程数上限");
+        entry(list, "node_processes_max_threads",        "线程数上限");
+        entry(list, "node_processes_pids",               "当前PID数");
+        entry(list, "node_processes_state",              "进程状态分布");
+        entry(list, "node_processes_threads",            "线程总数");
+        entry(list, "node_processes_threads_state",      "线程状态分布");
+        entry(list, "node_scrape_collector_duration_seconds","Exporter采集器耗时(秒)");
+        entry(list, "node_scrape_collector_success",     "Exporter采集器成功状态");
+        entry(list, "node_tcp_connection_states",        "TCP连接状态分布");
+        entry(list, "node_textfile_scrape_error",        "Textfile抓取错误");
+        entry(list, "node_time_clocksource_available_info","可用时钟源信息");
+        entry(list, "node_time_clocksource_current_info", "当前时钟源信息");
 
         // ==================== VMStat / Pressure ====================
         entry(list, "node_vmstat_oom_kill",                      "OOM Kill次数");
@@ -263,13 +374,52 @@ public final class MetricDictionary {
         entry(list, "node_vmstat_pswpout",                       "换出页数");
         entry(list, "node_pressure_cpu_waiting_seconds_total",   "CPU压力等待秒数");
         entry(list, "node_pressure_io_stalled_seconds_total",    "IO压力停滞秒数");
+        entry(list, "node_pressure_io_waiting_seconds_total",    "IO压力等待秒数");
         entry(list, "node_pressure_memory_stalled_seconds_total","内存压力停滞秒数");
+        entry(list, "node_pressure_memory_waiting_seconds_total","内存压力等待秒数");
+        // -- Timex --
+        entry(list, "node_timex_estimated_error_seconds",        "时间同步估计误差(秒)");
+        entry(list, "node_timex_frequency_adjustment_ratio",     "时间同步频率调整比率");
+        entry(list, "node_timex_loop_time_constant",             "时间同步环路时间常数");
+        entry(list, "node_timex_maxerror_seconds",               "时间同步最大误差(秒)");
+        entry(list, "node_timex_offset_seconds",                 "时间同步偏移(秒)");
+        entry(list, "node_timex_pps_calibration_total",          "PPS校准总数");
+        entry(list, "node_timex_pps_error_total",                "PPS错误总数");
+        entry(list, "node_timex_pps_frequency_hertz",            "PPS频率(Hz)");
+        entry(list, "node_timex_pps_jitter_seconds",             "PPS抖动(秒)");
+        entry(list, "node_timex_pps_jitter_total",               "PPS抖动总数");
+        entry(list, "node_timex_pps_shift_seconds",              "PPS偏移(秒)");
+        entry(list, "node_timex_pps_stability_exceeded_total",   "PPS稳定性超限总数");
+        entry(list, "node_timex_pps_stability_hertz",            "PPS稳定性(Hz)");
+        entry(list, "node_timex_status",                         "时间同步状态码");
+        entry(list, "node_timex_sync_status",                    "时间同步状态");
+        entry(list, "node_timex_tai_offset_seconds",             "TAI时间偏移(秒)");
+        entry(list, "node_timex_tick_seconds",                   "时钟滴答(秒)");
+        // -- UDP Queues --
+        entry(list, "node_udp_queues",                           "UDP队列长度");
 
         // ==================== Sockstat / Softnet ====================
         entry(list, "node_sockstat_UDP_inuse",       "UDP套接字使用中");
         entry(list, "node_sockstat_sockets_used",    "已使用套接字");
+        entry(list, "node_sockstat_FRAG6_inuse",     "IPv6分片套接字使用中");
+        entry(list, "node_sockstat_FRAG6_memory",    "IPv6分片套接字内存");
+        entry(list, "node_sockstat_FRAG_inuse",      "IPv4分片套接字使用中");
+        entry(list, "node_sockstat_FRAG_memory",     "IPv4分片套接字内存");
+        entry(list, "node_sockstat_RAW6_inuse",      "IPv6 RAW套接字使用中");
+        entry(list, "node_sockstat_RAW_inuse",       "IPv4 RAW套接字使用中");
+        entry(list, "node_sockstat_TCP6_inuse",      "TCPv6套接字使用中");
+        entry(list, "node_sockstat_UDP6_inuse",      "UDPv6套接字使用中");
+        entry(list, "node_sockstat_UDPLITE6_inuse",  "UDP-Litev6套接字使用中");
+        entry(list, "node_sockstat_UDPLITE_inuse",   "UDP-Lite套接字使用中");
+        entry(list, "node_sockstat_UDP_mem",         "UDP套接字内存(页)");
+        entry(list, "node_sockstat_UDP_mem_bytes",   "UDP套接字内存(字节)");
         entry(list, "node_softnet_processed_total",  "软中断处理数");
         entry(list, "node_softnet_dropped_total",    "软中断丢包数");
+        entry(list, "node_softnet_backlog_len",       "软中断backlog长度");
+        entry(list, "node_softnet_cpu_collision_total","软中断CPU冲突总数");
+        entry(list, "node_softnet_flow_limit_count_total","软中断流控限制总数");
+        entry(list, "node_softnet_received_rps_total","软中断RPS接收总数");
+        entry(list, "node_softnet_times_squeezed_total","软中断挤压次数");
 
         // ==================== Port (TCP 连接与传输) ====================
         // -- Linux --
@@ -278,6 +428,11 @@ public final class MetricDictionary {
         entry(list, "node_netstat_Tcp_OutSegs",             "TCP出站段数");
         entry(list, "node_netstat_Tcp_RetransSegs",         "TCP重传段数");
         entry(list, "node_sockstat_TCP_inuse",               "TCP套接字使用中");
+        entry(list, "node_sockstat_TCP_alloc",               "TCP套接字已分配");
+        entry(list, "node_sockstat_TCP_mem",                 "TCP套接字内存(页)");
+        entry(list, "node_sockstat_TCP_mem_bytes",           "TCP套接字内存(字节)");
+        entry(list, "node_sockstat_TCP_orphan",              "TCP孤儿套接字");
+        entry(list, "node_sockstat_TCP_tw",                  "TCP TIME_WAIT套接字");
         // -- Windows --
         entry(list, "windows_tcp_connection_failures_total", "TCP连接失败总数");
         entry(list, "windows_tcp_connections_active_total",  "TCP主动连接总数");
@@ -456,6 +611,9 @@ public final class MetricDictionary {
         entry(list, "process_resident_memory_bytes",         "进程常驻内存(字节)");
         entry(list, "process_start_time_seconds",            "进程启动时间戳");
         entry(list, "process_virtual_memory_bytes",          "进程虚拟内存(字节)");
+        entry(list, "process_virtual_memory_max_bytes",      "进程虚拟内存上限(字节)");
+        entry(list, "process_network_receive_bytes_total",   "进程网络接收字节总数");
+        entry(list, "process_network_transmit_bytes_total",  "进程网络发送字节总数");
 
         // ==================== Windows Process ====================
         entry(list, "windows_process_cpu_time_total",             "进程CPU时间总计");

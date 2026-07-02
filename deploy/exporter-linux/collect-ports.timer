@@ -1,0 +1,11 @@
+[Unit]
+Description=Apex Port Collector Timer (every 10 seconds)
+
+[Timer]
+OnBootSec=10
+OnUnitActiveSec=10
+AccuracySec=1
+Unit=collect-ports.service
+
+[Install]
+WantedBy=timers.target
