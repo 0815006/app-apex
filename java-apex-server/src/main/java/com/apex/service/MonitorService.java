@@ -1,5 +1,6 @@
 package com.apex.service;
 
+import com.apex.config.MetricDictionary;
 import com.apex.entity.*;
 import com.apex.mapper.*;
 import com.apex.model.*;
@@ -38,222 +39,6 @@ public class MonitorService {
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
-
-    // =============================================
-    // 指标名 → 中文翻译映射（覆盖 Linux + Windows 两大族系）
-    // =============================================
-
-    private static final Map<String, String> CHINESE_NAME_MAP = new LinkedHashMap<>();
-    private static final Map<String, String> METRIC_CATEGORY_MAP = new LinkedHashMap<>();
-
-    static {
-        // -- CPU --
-        put("node_cpu_seconds_total", "CPU累计秒数", "cpu");
-        put("node_cpu_guest_seconds_total", "CPU虚拟客户机秒数", "cpu");
-        put("node_schedstat_running_seconds_total", "CPU调度运行秒数", "cpu");
-        put("node_schedstat_timeslices_total", "CPU调度时间片总数", "cpu");
-        put("node_schedstat_waiting_seconds_total", "CPU调度等待秒数", "cpu");
-        put("node_load1", "1分钟平均负载", "cpu");
-        put("node_load5", "5分钟平均负载", "cpu");
-        put("node_load15", "15分钟平均负载", "cpu");
-        put("node_procs_blocked", "阻塞进程数", "cpu");
-        put("node_procs_running", "运行中进程数", "cpu");
-
-        // -- Memory --
-        put("node_memory_MemTotal_bytes", "物理内存总量(字节)", "memory");
-        put("node_memory_MemFree_bytes", "物理空闲内存(字节)", "memory");
-        put("node_memory_MemAvailable_bytes", "物理可用内存(字节)", "memory");
-        put("node_memory_Buffers_bytes", "缓冲区内存(字节)", "memory");
-        put("node_memory_Cached_bytes", "缓存内存(字节)", "memory");
-        put("node_memory_SwapCached_bytes", "Swap缓存(字节)", "memory");
-        put("node_memory_Active_bytes", "活跃内存(字节)", "memory");
-        put("node_memory_Inactive_bytes", "非活跃内存(字节)", "memory");
-        put("node_memory_AnonPages_bytes", "匿名页内存(字节)", "memory");
-        put("node_memory_Mapped_bytes", "映射内存(字节)", "memory");
-        put("node_memory_Shmem_bytes", "共享内存(字节)", "memory");
-        put("node_memory_Slab_bytes", "Slab内核内存(字节)", "memory");
-        put("node_memory_SReclaimable_bytes", "可回收Slab(字节)", "memory");
-        put("node_memory_SUnreclaim_bytes", "不可回收Slab(字节)", "memory");
-        put("node_memory_KernelStack_bytes", "内核栈内存(字节)", "memory");
-        put("node_memory_PageTables_bytes", "页表内存(字节)", "memory");
-        put("node_memory_SwapTotal_bytes", "Swap总量(字节)", "memory");
-        put("node_memory_SwapFree_bytes", "Swap空闲(字节)", "memory");
-        put("node_memory_Dirty_bytes", "脏页(字节)", "memory");
-        put("node_memory_Writeback_bytes", "回写页(字节)", "memory");
-        put("node_memory_HugePages_Total", "大页总数", "memory");
-        put("node_memory_HugePages_Free", "大页空闲", "memory");
-        put("node_memory_HugePages_Rsvd", "大页预留", "memory");
-        put("node_memory_HugePages_Surp", "大页盈余", "memory");
-        put("node_memory_Hugepagesize_bytes", "大页尺寸(字节)", "memory");
-        put("node_memory_VmallocTotal_bytes", "Vmalloc总量(字节)", "memory");
-        put("node_memory_VmallocUsed_bytes", "Vmalloc使用(字节)", "memory");
-        put("node_memory_VmallocChunk_bytes", "Vmalloc最大块(字节)", "memory");
-
-        // -- Disk IO --
-        put("node_disk_read_bytes_total", "磁盘读取字节总数", "disk");
-        put("node_disk_written_bytes_total", "磁盘写入字节总数", "disk");
-        put("node_disk_reads_completed_total", "磁盘读取完成次数", "disk");
-        put("node_disk_writes_completed_total", "磁盘写入完成次数", "disk");
-        put("node_disk_read_time_seconds_total", "磁盘读取耗时(秒)", "disk");
-        put("node_disk_write_time_seconds_total", "磁盘写入耗时(秒)", "disk");
-        put("node_disk_io_time_seconds_total", "磁盘IO耗时(秒)", "disk");
-        put("node_disk_discard_time_seconds_total", "磁盘discard耗时", "disk");
-        put("node_disk_flush_requests_time_seconds_total", "磁盘flush耗时", "disk");
-        put("node_disk_reads_merged_total", "磁盘读合并数", "disk");
-        put("node_disk_writes_merged_total", "磁盘写合并数", "disk");
-        put("node_disk_info", "磁盘设备信息", "disk");
-
-        // -- Filesystem --
-        put("node_filesystem_size_bytes", "文件系统总容量(字节)", "disk");
-        put("node_filesystem_free_bytes", "文件系统空闲(字节)", "disk");
-        put("node_filesystem_avail_bytes", "文件系统可用(字节)", "disk");
-        put("node_filesystem_files", "文件系统inode总数", "disk");
-        put("node_filesystem_files_free", "文件系统inode空闲", "disk");
-        put("node_filesystem_readonly", "文件系统只读", "disk");
-        put("node_filesystem_device_error", "文件系统设备错误", "disk");
-
-        // -- Network --
-        put("node_network_receive_bytes_total", "网络接收字节总数", "network");
-        put("node_network_transmit_bytes_total", "网络发送字节总数", "network");
-        put("node_network_receive_packets_total", "网络接收包总数", "network");
-        put("node_network_transmit_packets_total", "网络发送包总数", "network");
-        put("node_network_receive_errs_total", "网络接收错误数", "network");
-        put("node_network_transmit_errs_total", "网络发送错误数", "network");
-        put("node_network_receive_drop_total", "网络接收丢包数", "network");
-        put("node_network_transmit_drop_total", "网络发送丢包数", "network");
-        put("node_network_speed_bytes", "网卡速率(字节/秒)", "network");
-        put("node_network_mtu_bytes", "网卡MTU", "network");
-        put("node_network_info", "网卡信息", "network");
-        put("node_network_carrier", "网卡载波", "network");
-        put("node_network_iface_id", "网卡接口ID", "network");
-
-        // -- Netstat --
-        put("node_netstat_Icmp_InMsgs", "ICMP入站消息", "network");
-        put("node_netstat_Icmp_OutMsgs", "ICMP出站消息", "network");
-        put("node_netstat_Tcp_CurrEstab", "TCP当前连接数", "network");
-        put("node_netstat_Tcp_InSegs", "TCP入站段数", "network");
-        put("node_netstat_Tcp_OutSegs", "TCP出站段数", "network");
-        put("node_netstat_Tcp_RetransSegs", "TCP重传段数", "network");
-        put("node_netstat_Udp_InDatagrams", "UDP入站数据报", "network");
-        put("node_netstat_Udp_OutDatagrams", "UDP出站数据报", "network");
-        put("node_netstat_Ip_Forwarding", "IP转发", "network");
-
-        // -- System --
-        put("node_boot_time_seconds", "系统启动时间戳", "system");
-        put("node_time_seconds", "当前系统时间戳", "system");
-        put("node_context_switches_total", "上下文切换总数", "system");
-        put("node_intr_total", "中断总数", "system");
-        put("node_forks_total", "fork总数", "system");
-        put("node_entropy_available_bits", "熵池可用位", "system");
-        put("node_filefd_allocated", "已分配文件描述符", "system");
-        put("node_filefd_maximum", "文件描述符上限", "system");
-        put("node_nf_conntrack_entries", "连接跟踪条目数", "system");
-        put("node_nf_conntrack_entries_limit", "连接跟踪上限", "system");
-        put("node_arp_entries", "ARP表条目数", "system");
-        put("node_os_info", "操作系统信息", "system");
-        put("node_uname_info", "系统uname信息", "system");
-        put("node_selinux_enabled", "SELinux状态", "system");
-        put("node_time_zone_offset_seconds", "时区偏移(秒)", "system");
-
-        // -- VMStat / Pressure --
-        put("node_vmstat_oom_kill", "OOM Kill次数", "system");
-        put("node_vmstat_pgfault", "页面错误次数", "system");
-        put("node_vmstat_pgmajfault", "主页面错误次数", "system");
-        put("node_vmstat_pgpgin", "页换入次数", "system");
-        put("node_vmstat_pgpgout", "页换出次数", "system");
-        put("node_vmstat_pswpin", "换入页数", "system");
-        put("node_vmstat_pswpout", "换出页数", "system");
-        put("node_pressure_cpu_waiting_seconds_total", "CPU压力等待秒数", "system");
-        put("node_pressure_io_stalled_seconds_total", "IO压力停滞秒数", "system");
-        put("node_pressure_memory_stalled_seconds_total", "内存压力停滞秒数", "system");
-
-        // -- Sockstat / Softnet --
-        put("node_sockstat_TCP_inuse", "TCP套接字使用中", "network");
-        put("node_sockstat_UDP_inuse", "UDP套接字使用中", "network");
-        put("node_sockstat_sockets_used", "已使用套接字", "network");
-        put("node_softnet_processed_total", "软中断处理数", "network");
-        put("node_softnet_dropped_total", "软中断丢包数", "network");
-
-        // -- Windows CPU --
-        put("windows_cpu_time_total", "CPU时间总计", "cpu");
-        put("windows_cpu_clock_interrupts_total", "CPU时钟中断总数", "cpu");
-        put("windows_cpu_interrupts_total", "CPU硬件中断总数", "cpu");
-        put("windows_cpu_dpcs_total", "CPU DPC调用总数", "cpu");
-        put("windows_cpu_idle_break_events_total", "CPU空闲唤醒次数", "cpu");
-        put("windows_cpu_core_frequency_mhz", "CPU核心频率(MHz)", "cpu");
-        put("windows_cpu_cstate_seconds_total", "CPU C状态秒数", "cpu");
-        put("windows_cpu_parking_status", "CPU Parking状态", "cpu");
-        put("windows_cpu_processor_mp", "CPU MPerf", "cpu");
-        put("windows_cpu_processor_performance", "CPU性能百分比", "cpu");
-        put("windows_cpu_processor_utility", "CPU实用率", "cpu");
-        put("windows_cpu_logical_processor", "逻辑处理器数", "cpu");
-
-        // -- Windows Memory --
-        put("windows_memory_available_bytes", "可用内存(字节)", "memory");
-        put("windows_memory_cache_bytes", "缓存内存(字节)", "memory");
-        put("windows_memory_committed_bytes", "已提交内存(字节)", "memory");
-        put("windows_memory_commit_limit", "提交内存上限", "memory");
-        put("windows_memory_pool_paged_bytes", "分页池(字节)", "memory");
-        put("windows_memory_pool_nonpaged_bytes", "非分页池(字节)", "memory");
-        put("windows_memory_physical_total_bytes", "物理内存总量(字节)", "memory");
-        put("windows_memory_physical_free_bytes", "物理空闲内存(字节)", "memory");
-        put("windows_memory_page_faults_total", "页面错误总数", "memory");
-        put("windows_memory_standby_cache_bytes", "备用缓存(字节)", "memory");
-        put("windows_memory_modified_bytes", "已修改页(字节)", "memory");
-        put("windows_memory_swap_page_reads_total", "Swap页读取总数", "memory");
-        put("windows_memory_swap_page_writes_total", "Swap页写入总数", "memory");
-
-        // -- Windows Disk --
-        put("windows_logical_disk_size_bytes", "逻辑磁盘总容量(字节)", "disk");
-        put("windows_logical_disk_free_bytes", "逻辑磁盘空闲(字节)", "disk");
-        put("windows_logical_disk_read_bytes_total", "逻辑磁盘读取字节", "disk");
-        put("windows_logical_disk_write_bytes_total", "逻辑磁盘写入字节", "disk");
-        put("windows_logical_disk_reads_total", "逻辑磁盘读取次数", "disk");
-        put("windows_logical_disk_writes_total", "逻辑磁盘写入次数", "disk");
-        put("windows_logical_disk_read_seconds_total", "逻辑磁盘读取耗时", "disk");
-        put("windows_logical_disk_write_seconds_total", "逻辑磁盘写入耗时", "disk");
-        put("windows_logical_disk_idle_seconds_total", "逻辑磁盘空闲秒数", "disk");
-        put("windows_logical_disk_split_ios_total", "逻辑磁盘拆分IO数", "disk");
-        put("windows_logical_disk_queue_length", "逻辑磁盘队列长度", "disk");
-        put("windows_physical_disk_size_bytes", "物理磁盘总容量", "disk");
-        put("windows_physical_disk_read_bytes_total", "物理磁盘读取字节", "disk");
-        put("windows_physical_disk_write_bytes_total", "物理磁盘写入字节", "disk");
-        put("windows_physical_disk_reads_total", "物理磁盘读取次数", "disk");
-        put("windows_physical_disk_writes_total", "物理磁盘写入次数", "disk");
-        put("windows_physical_disk_read_seconds_total", "物理磁盘读取耗时", "disk");
-        put("windows_physical_disk_write_seconds_total", "物理磁盘写入耗时", "disk");
-        put("windows_physical_disk_idle_seconds_total", "物理磁盘空闲秒数", "disk");
-        put("windows_physical_disk_queue_length", "物理磁盘队列长度", "disk");
-
-        // -- Windows Network --
-        put("windows_net_bytes_received_total", "网络接收字节总数", "network");
-        put("windows_net_bytes_sent_total", "网络发送字节总数", "network");
-        put("windows_net_packets_received_total", "网络接收包总数", "network");
-        put("windows_net_packets_sent_total", "网络发送包总数", "network");
-        put("windows_net_packets_received_errors_total", "网络接收错误", "network");
-        put("windows_net_packets_outbound_errors_total", "网络发送错误", "network");
-        put("windows_net_packets_received_discarded_total", "网络接收丢弃", "network");
-        put("windows_net_packets_outbound_discarded_total", "网络发送丢弃", "network");
-        put("windows_net_current_bandwidth", "网卡带宽(bps)", "network");
-        put("windows_net_output_queue_length", "网卡输出队列", "network");
-
-        // -- Windows Service --
-        put("windows_service_info", "服务信息", "service");
-        put("windows_service_state", "服务运行状态", "service");
-        put("windows_service_start_mode", "服务启动模式", "service");
-        put("windows_service_process", "服务进程信息", "service");
-
-        // -- Windows OS --
-        put("windows_os_info", "操作系统信息", "system");
-        put("windows_os_hostname", "主机名", "system");
-        put("windows_system_boot_time_timestamp", "系统启动时间戳", "system");
-        put("windows_system_context_switches_total", "上下文切换总数", "system");
-    }
-
-    private static void put(String key, String chineseName, String category) {
-        CHINESE_NAME_MAP.put(key, chineseName);
-        METRIC_CATEGORY_MAP.put(key, category);
-    }
 
     // =============================================
     // 机器管理
@@ -369,67 +154,24 @@ public class MonitorService {
     }
 
     /**
-     * 根据指标名查找中文翻译。
+     * 根据指标名查找中文翻译。委托给 MetricDictionary。
      */
     public String getChineseName(String metricName) {
-        return CHINESE_NAME_MAP.getOrDefault(metricName, metricName);
+        return MetricDictionary.getChineseName(metricName);
     }
 
     /**
-     * 根据指标名前缀推断分类。
+     * 根据指标名前缀推断分类。委托给 MetricDictionary。
      */
     public String inferCategory(String metricName) {
-        // 优先精确匹配
-        if (METRIC_CATEGORY_MAP.containsKey(metricName)) {
-            return METRIC_CATEGORY_MAP.get(metricName);
-        }
-        // 前缀推断
-        if (metricName.startsWith("node_cpu_") || metricName.startsWith("windows_cpu_")
-                || metricName.startsWith("node_schedstat_") || metricName.startsWith("node_load")
-                || metricName.startsWith("node_procs_")) {
-            return "cpu";
-        }
-        if (metricName.startsWith("node_memory_") || metricName.startsWith("windows_memory_")) {
-            return "memory";
-        }
-        if (metricName.startsWith("node_disk_") || metricName.startsWith("windows_logical_disk_")
-                || metricName.startsWith("windows_physical_disk_")
-                || metricName.startsWith("node_filesystem_")) {
-            return "disk";
-        }
-        if (metricName.startsWith("node_network_") || metricName.startsWith("windows_net_")
-                || metricName.startsWith("node_netstat_") || metricName.startsWith("node_sockstat_")
-                || metricName.startsWith("node_softnet_")) {
-            return "network";
-        }
-        if (metricName.startsWith("windows_service_")) {
-            return "service";
-        }
-        if (metricName.startsWith("node_") || metricName.startsWith("windows_os_")
-                || metricName.startsWith("windows_system_")) {
-            return "system";
-        }
-        // Go运行时指标
-        if (metricName.startsWith("go_") || metricName.startsWith("process_")) {
-            return "runtime";
-        }
-        return "other";
+        return MetricDictionary.inferCategory(metricName);
     }
 
     /**
-     * 分类名中文翻译。
+     * 分类名中文翻译。委托给 MetricDictionary。
      */
     public String getCategoryChineseName(String categoryKey) {
-        return switch (categoryKey) {
-            case "cpu" -> "CPU";
-            case "memory" -> "内存";
-            case "disk" -> "磁盘/文件系统";
-            case "network" -> "网络";
-            case "service" -> "服务";
-            case "system" -> "系统";
-            case "runtime" -> "Go运行时";
-            default -> "其他";
-        };
+        return MetricDictionary.getCategoryChineseName(categoryKey);
     }
 
     // =============================================
@@ -491,6 +233,7 @@ public class MonitorService {
                 MonitorMetricItem item = new MonitorMetricItem(
                         pm.metricKey(),
                         pm.metricName(),
+                        pm.labels(),
                         getChineseName(pm.metricName()),
                         pm.value(),
                         "",  // description 暂空
@@ -502,7 +245,7 @@ public class MonitorService {
 
             // 构建分类列表
             List<MonitorMetricCategory> categories = new ArrayList<>();
-            List<String> categoryOrder = List.of("cpu", "memory", "disk", "network", "service", "system", "runtime", "other");
+            List<String> categoryOrder = MetricDictionary.MetricCategory.orderedKeys();
             for (String cat : categoryOrder) {
                 if (categorizedMap.containsKey(cat)) {
                     categories.add(new MonitorMetricCategory(cat, getCategoryChineseName(cat), categorizedMap.get(cat)));
@@ -516,6 +259,7 @@ public class MonitorService {
                     orphaned.add(new MonitorMetricItem(
                             cm.getMetricKey(),
                             cm.getMetricName(),
+                            "",  // 丢失指标无 labels 信息
                             cm.getDisplayName(),
                             "—",
                             "该指标在本次 Exporter 返回中缺失",
@@ -535,6 +279,7 @@ public class MonitorService {
                     .map(cm -> new MonitorMetricItem(
                             cm.getMetricKey(),
                             cm.getMetricName(),
+                            "",  // 丢失指标无 labels 信息
                             cm.getDisplayName(),
                             "—",
                             "无法连接 Exporter",

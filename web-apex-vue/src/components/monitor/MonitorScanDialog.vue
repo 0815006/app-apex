@@ -24,97 +24,102 @@
       <span v-else class="h-error">⚠️ {{ headerErrorMsg || '无法连接 Exporter' }}</span>
     </div>
 
-    <!-- 加载中 -->
-    <div v-if="loading" class="scan-loading">
-      <el-icon class="is-loading"><Loading /></el-icon>
-      <span>正在拉取全量指标...</span>
-    </div>
-
-    <!-- 按分类展示所有指标 -->
-    <template v-else-if="fullMetrics">
-      <!-- Exporter 不可达提示 -->
-      <el-alert
-        v-if="!fullMetrics.reachable"
-        :title="fullMetrics.errorMsg || 'Exporter 不可达'"
-        type="error"
-        show-icon
-        :closable="false"
-        style="margin-bottom: 12px"
-      />
-
-      <!-- 分类指标区域 — 折叠面板 -->
-      <el-collapse v-if="fullMetrics.categories && fullMetrics.categories.length > 0" v-model="activeCategories">
-        <el-collapse-item
-          v-for="cat in fullMetrics.categories"
-          :key="cat.categoryKey"
-          :name="cat.categoryKey"
-        >
-          <template #title>
-            <div class="category-title">
-              <span class="cat-icon">{{ getCategoryIcon(cat.categoryKey) }}</span>
-              <span class="cat-name">{{ cat.categoryName }}</span>
-              <el-tag size="small" round>{{ cat.metrics.length }} 项</el-tag>
-            </div>
-          </template>
-
-          <div class="metric-list">
-            <div
-              v-for="item in cat.metrics"
-              :key="item.metricKey"
-              class="metric-row"
-              :class="{ customized: item.customized }"
-            >
-              <div class="metric-info">
-                <span class="metric-chinese">{{ item.chineseName }}</span>
-                <el-tooltip v-if="item.description" :content="item.description" placement="top">
-                  <el-icon class="metric-desc-icon"><InfoFilled /></el-icon>
-                </el-tooltip>
-                <span class="metric-key-tag">{{ item.metricName }}</span>
-              </div>
-              <div class="metric-right">
-                <code class="metric-value">{{ item.value }}</code>
-                <template v-if="item.customized">
-                  <el-button type="danger" link size="small" @click="handleRemoveCustom(item)">
-                    取消定制
-                  </el-button>
-                </template>
-                <template v-else>
-                  <el-button type="primary" link size="small" @click="handleCustomMetric(item)">
-                    ➕ 定制
-                  </el-button>
-                </template>
-              </div>
-            </div>
-          </div>
-        </el-collapse-item>
-      </el-collapse>
-
-      <el-empty v-else description="Exporter 未返回任何指标数据" :image-size="60" />
-
-      <!-- 丢失的定制指标（红色醒目区域） -->
-      <div v-if="fullMetrics.orphaned && fullMetrics.orphaned.length > 0" class="orphaned-section">
-        <div class="orphaned-title">
-          <span class="orphaned-icon">⚠️</span>
-          <span>已丢失的定制指标（Exporter 不再返回这些指标，可能服务已下线）</span>
-        </div>
-        <div
-          v-for="item in fullMetrics.orphaned"
-          :key="item.metricKey"
-          class="orphaned-row"
-        >
-          <div class="metric-info">
-            <span class="metric-chinese">{{ item.chineseName }}</span>
-            <span class="metric-key-tag">{{ item.metricName }}</span>
-          </div>
-          <div class="metric-right">
-            <el-tag type="danger" size="small" effect="dark">已丢失</el-tag>
-            <el-button type="danger" link size="small" @click="handleRemoveCustom(item)">
-              移除定制
-            </el-button>
-          </div>
-        </div>
+    <!-- 中间滚动区域：加载态 / 指标折叠面板 -->
+    <div class="scan-scroll-area">
+      <!-- 加载中 -->
+      <div v-if="loading" class="scan-loading">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>正在拉取全量指标...</span>
       </div>
-    </template>
+
+      <!-- 按分类展示所有指标 -->
+      <template v-else-if="fullMetrics">
+        <!-- Exporter 不可达提示 -->
+        <el-alert
+          v-if="!fullMetrics.reachable"
+          :title="fullMetrics.errorMsg || 'Exporter 不可达'"
+          type="error"
+          show-icon
+          :closable="false"
+          style="margin-bottom: 12px"
+        />
+
+        <!-- 分类指标区域 — 折叠面板 -->
+        <el-collapse v-if="fullMetrics.categories && fullMetrics.categories.length > 0" v-model="activeCategories">
+          <el-collapse-item
+            v-for="cat in fullMetrics.categories"
+            :key="cat.categoryKey"
+            :name="cat.categoryKey"
+          >
+            <template #title>
+              <div class="category-title">
+                <span class="cat-icon">{{ getCategoryIcon(cat.categoryKey) }}</span>
+                <span class="cat-name">{{ cat.categoryName }}</span>
+                <el-tag size="small" round>{{ cat.metrics.length }} 项</el-tag>
+              </div>
+            </template>
+
+            <div class="metric-list">
+              <div
+                v-for="item in cat.metrics"
+                :key="item.metricKey"
+                class="metric-row"
+                :class="{ customized: item.customized }"
+              >
+                <div class="metric-info">
+                  <span class="metric-chinese">{{ item.chineseName }}</span>
+                  <el-tooltip v-if="item.description" :content="item.description" placement="top">
+                    <el-icon class="metric-desc-icon"><InfoFilled /></el-icon>
+                  </el-tooltip>
+                  <span class="metric-key-tag">{{ item.metricName }}</span>
+                  <span v-if="item.labels" class="metric-labels-tag">{{ item.labels }}</span>
+                </div>
+                <div class="metric-right">
+                  <code class="metric-value">{{ item.value }}</code>
+                  <template v-if="item.customized">
+                    <el-button type="danger" link size="small" @click="handleRemoveCustom(item)">
+                      取消定制
+                    </el-button>
+                  </template>
+                  <template v-else>
+                    <el-button type="primary" link size="small" @click="handleCustomMetric(item)">
+                      ➕ 定制
+                    </el-button>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+
+        <el-empty v-else description="Exporter 未返回任何指标数据" :image-size="60" />
+
+        <!-- 丢失的定制指标（红色醒目区域） -->
+        <div v-if="fullMetrics.orphaned && fullMetrics.orphaned.length > 0" class="orphaned-section">
+          <div class="orphaned-title">
+            <span class="orphaned-icon">⚠️</span>
+            <span>已丢失的定制指标（Exporter 不再返回这些指标，可能服务已下线）</span>
+          </div>
+          <div
+            v-for="item in fullMetrics.orphaned"
+            :key="item.metricKey"
+            class="orphaned-row"
+          >
+            <div class="metric-info">
+              <span class="metric-chinese">{{ item.chineseName }}</span>
+              <span class="metric-key-tag">{{ item.metricName }}</span>
+              <span v-if="item.labels" class="metric-labels-tag">{{ item.labels }}</span>
+            </div>
+            <div class="metric-right">
+              <el-tag type="danger" size="small" effect="dark">已丢失</el-tag>
+              <el-button type="danger" link size="small" @click="handleRemoveCustom(item)">
+                移除定制
+              </el-button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
 
     <template #footer>
       <el-button @click="visible = false">关闭</el-button>
@@ -158,6 +163,8 @@ function getCategoryIcon(key: string): string {
     disk: '💾',
     network: '🌐',
     service: '⚙️',
+    port: '🔌',
+    process: '🏭',
     system: '🖧',
     runtime: '☕',
   }
@@ -291,6 +298,13 @@ async function handleRemoveCustom(item: MonitorMetricItem) {
 </script>
 
 <style scoped>
+/* 中间滚动容器：限定高度，独立滚动 */
+.scan-scroll-area {
+  max-height: calc(80vh - 180px);
+  min-height: 100px;
+  overflow-y: auto;
+}
+
 .scan-header {
   padding: 10px 16px;
   background: #f5f7fa;
@@ -382,6 +396,16 @@ async function handleRemoveCustom(item: MonitorMetricItem) {
   color: #C0C4CC;
   font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
 }
+/* 标签信息（如 core="0,0"），用不同颜色区分 */
+.metric-labels-tag {
+  font-size: 11px;
+  color: #909399;
+  background: #f0f2f5;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+  white-space: nowrap;
+}
 
 .metric-right {
   display: flex;
@@ -438,12 +462,16 @@ async function handleRemoveCustom(item: MonitorMetricItem) {
   color: #F56C6C;
   text-decoration: line-through;
 }
+/* orphaned 行中 labels 保持灰色 */
+.orphaned-row .metric-labels-tag {
+  color: #C0C4CC;
+  background: #FDF6F6;
+}
 </style>
 
-<!-- 非 scoped：穿透 Element Plus 弹窗结构，将滚动条置于弹窗外框右侧 -->
+<!-- 非 scoped：穿透 Element Plus 弹窗结构 -->
 <style>
 .scan-dialog {
-  max-height: 80vh;
-  overflow-y: auto;
+  max-height: 85vh;
 }
 </style>

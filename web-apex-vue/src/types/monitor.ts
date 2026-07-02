@@ -56,6 +56,7 @@ export interface CustomMetricStatus {
 export interface MonitorMetricItem {
   metricKey: string         // 指标唯一标识（含标签）
   metricName: string        // 纯指标名
+  labels: string            // 标签信息（如 {core="0,0"}，无标签则为空字符串）
   chineseName: string       // 中文翻译
   value: string             // 当前值
   description: string       // 指标说明
