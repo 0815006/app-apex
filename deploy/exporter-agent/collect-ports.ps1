@@ -15,11 +15,11 @@ if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 }
 
-# 写入 HELP / TYPE 头部 (纯英文 + ASCII 编码，兼容所有 PowerShell 版本)
-@"
-# HELP windows_listening_port Listening port status (1=Listening)
-# TYPE windows_listening_port gauge
-"@ | Out-File -FilePath $TmpFile -Encoding ascii
+# 先构建完整的 Prometheus 指标文本，再一次性写入（避免 Add-Content 编码不一致）
+$sb = New-Object System.Text.StringBuilder
+
+[void]$sb.AppendLine("# HELP windows_listening_port Listening port status (1=Listening)")
+[void]$sb.AppendLine("# TYPE windows_listening_port gauge")
 
 # --- TCP 监听端口 ---
 $tcpListeners = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue
@@ -38,7 +38,7 @@ foreach ($conn in $tcpListeners) {
     # Prometheus label 中的特殊字符转义
     $escapedProc = $procName -replace '\\', '\\' -replace '"', '\"'
     $line = "windows_listening_port{port=`"$port`",local_address=`"$localAddr`",protocol=`"tcp`",process=`"$escapedProc`",pid=`"$procId`"} 1"
-    Add-Content -Path $TmpFile -Value $line
+    [void]$sb.AppendLine($line)
 }
 
 # --- UDP 端点 ---
@@ -57,8 +57,11 @@ foreach ($conn in $udpListeners) {
 
     $escapedProc = $procName -replace '\\', '\\' -replace '"', '\"'
     $line = "windows_listening_port{port=`"$port`",local_address=`"$localAddr`",protocol=`"udp`",process=`"$escapedProc`",pid=`"$procId`"} 1"
-    Add-Content -Path $TmpFile -Value $line
+    [void]$sb.AppendLine($line)
 }
+
+# 一次性写入，确保编码一致 (ASCII 兼容所有平台)
+$sb.ToString() | Out-File -FilePath $TmpFile -Encoding ascii -NoNewline
 
 # 原子替换
 Move-Item -Force $TmpFile $OutputFile
