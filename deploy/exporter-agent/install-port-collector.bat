@@ -1,39 +1,40 @@
 @echo off
-setlocal
-echo === Apex Port Collector Installer ===
-echo.
+title Port Collector Installer
 
 set AGENT_DIR=D:\app\exporter-agent
-set PS1_PATH=%AGENT_DIR%\collect-ports.ps1
 
-if not exist "%PS1_PATH%" (
-    echo [ERROR] collect-ports.ps1 not found in %AGENT_DIR%
-    exit /b 1
-)
+echo ============================================
+echo   Port Collector Installer
+echo ============================================
+echo.
 
-REM ---- Register Windows Scheduled Task ----
-REM Schedule: triggers every 1 minute, repeats every 10 seconds for 1 minute
-echo [1/2] Registering scheduled task "Apex Port Collector" ...
-schtasks /create ^
-    /sc minute /mo 1 ^
-    /ri 10 /du "00:01" ^
-    /tn "Apex Port Collector" ^
-    /tr "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%PS1_PATH%\"" ^
-    /f
+net session >nul 2>&1
+if %errorlevel% neq 0 goto :err_no_admin
 
-if %errorlevel% neq 0 (
-    echo [ERROR] Failed to create scheduled task. Run as Administrator?
-    exit /b 1
-)
+REM 清理残留的旧计划任务
+schtasks /delete /tn "Port Collector" /f 2>nul
 
-echo [2/2] Running first collection ...
-powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "%PS1_PATH%"
+REM 启动后台采集进程（无窗口，每分钟自动采集）
+echo Starting Port Collector daemon (hidden, every 60s) ...
+start "" /MIN powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "%AGENT_DIR%\port-collector-daemon.ps1"
 
 echo.
-echo === Port collector installed ===
-echo Task   : Apex Port Collector (every 10s)
-echo Script : %PS1_PATH%
+echo ============================================
+echo   Port collector started
+echo ============================================
+echo Script : %AGENT_DIR%\collect-ports.ps1
 echo Output : %AGENT_DIR%\textfile\listening_ports.prom
 echo.
-echo To verify: schtasks /query /tn "Apex Port Collector"
-echo            type %AGENT_DIR%\textfile\listening_ports.prom
+echo Runs silently in background, no popup.
+echo Stops when you log out or reboot.
+echo.
+echo To verify: type %AGENT_DIR%\textfile\listening_ports.prom
+goto :end
+
+:err_no_admin
+echo [ERROR] Administrator privileges required.
+echo        Right-click - "Run as administrator".
+
+:end
+echo.
+pause

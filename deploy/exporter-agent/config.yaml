@@ -1,8 +1,4 @@
-# windows_exporter 配置文件
-# 注意：启用 textfile collector 后，Exporter 会从 textfile 目录读取自定义指标
+# windows_exporter 配置文件 (v0.31.7+)
+# textfile collector 默认读取运行目录下的 .\textfile 目录
 collectors:
   enabled: cpu,memory,logical_disk,physical_disk,net,os,service,system,tcp,process,textfile
-
-collector:
-  textfile:
-    directory: .\textfile

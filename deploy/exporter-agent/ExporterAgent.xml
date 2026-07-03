@@ -5,6 +5,7 @@
   <description>Prometheus Windows Exporter Agent (port 9182)</description>
   <executable>%BASE%\windows_exporter-0.31.7-amd64.exe</executable>
   <arguments>--config.file="%BASE%\config.yaml"</arguments>
+  <workingdirectory>%BASE%</workingdirectory>
   <log mode="roll"></log>
   <onfailure action="restart" delay="10 sec"/>
 </service>
