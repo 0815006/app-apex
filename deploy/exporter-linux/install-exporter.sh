@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# Apex Node Exporter Installer (Linux)
+# Node Exporter Installer (Linux)
 # 从同目录下的 tgz 包解压 node_exporter 二进制，
 # 注册为 systemd 服务。
 # 用法: sudo ./install-exporter.sh
@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TGZ_FILE="${SCRIPT_DIR}/node_exporter-1.11.1.linux-amd64.tar.gz"
 TEXTFILE_DIR="${SCRIPT_DIR}/textfile"
 
-echo "=== Apex Node Exporter Installer ==="
+echo "=== Node Exporter Installer ==="
 echo ""
 
 # ---- 权限检查 ----

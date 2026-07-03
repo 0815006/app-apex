@@ -1,12 +1,16 @@
 package com.apex.service;
 
+import com.apex.entity.MonitorCustomMetric;
 import com.apex.entity.MonitorHistory;
 import com.apex.entity.MonitorMachine;
 import com.apex.entity.MonitorSampleTask;
+import com.apex.mapper.MonitorCustomMetricMapper;
 import com.apex.mapper.MonitorHistoryMapper;
 import com.apex.mapper.MonitorMachineMapper;
 import com.apex.mapper.MonitorSampleTaskMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -16,13 +20,13 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.*;
 
 /**
  * 采样任务守护调度器。
  * 每 5 秒扫描任务表，管理 WAITING → RUNNING → FINISHED 状态流转，
- * 为每个 RUNNING 任务维护独立的采集线程。
+ * 为每个 RUNNING 任务维护独立的采集线程，按定制指标动态采集。
  */
 @Slf4j
 @Component
@@ -32,7 +36,9 @@ public class MonitorSampleScheduler {
     private final MonitorSampleTaskMapper sampleTaskMapper;
     private final MonitorMachineMapper machineMapper;
     private final MonitorHistoryMapper historyMapper;
+    private final MonitorCustomMetricMapper customMetricMapper;
     private final MonitorService monitorService;
+    private final ObjectMapper objectMapper;
 
     @Value("${apex.monitor.scheduler.enabled:true}")
     private boolean schedulerEnabled;
@@ -158,7 +164,7 @@ public class MonitorSampleScheduler {
     }
 
     /**
-     * 执行一次采样 — 采集 CPU/内存/磁盘并写入 history。
+     * 执行一次采样 — 按任务关联的定制指标 metricKey 动态采集并写入 history。
      */
     private void collectSample(MonitorSampleTask task) {
         MonitorMachine machine = machineMapper.selectById(task.getMachineId());
@@ -167,22 +173,64 @@ public class MonitorSampleScheduler {
             return;
         }
 
+        // 解析任务关联的指标ID列表
+        List<Integer> metricIds = parseMetricIds(task.getMetricIds());
+        if (metricIds.isEmpty()) {
+            log.warn("任务 {} 未关联任何定制指标，跳过采集", task.getId());
+            return;
+        }
+
+        // 查询对应的定制指标记录
+        List<MonitorCustomMetric> metrics = customMetricMapper.selectBatchIds(metricIds);
+        if (metrics.isEmpty()) {
+            log.warn("任务 {} 关联的定制指标均已删除，跳过采集", task.getId());
+            return;
+        }
+
         try {
             String metricsText = monitorService.fetchMetrics(machine);
-            double cpu = monitorService.parseCpuUsage(metricsText, machine.getOsType());
-            double mem = monitorService.parseMemUsage(metricsText, machine.getOsType());
-            double disk = monitorService.parseDiskUsage(metricsText, machine.getOsType());
+
+            // 解析全量指标
+            List<MonitorService.ParsedMetric> allMetrics = monitorService.parseAllMetrics(metricsText);
+
+            // 按 metricKey 构建快速查找表
+            Map<String, String> valueMap = new HashMap<>();
+            for (MonitorService.ParsedMetric pm : allMetrics) {
+                valueMap.put(pm.metricKey(), pm.value());
+            }
+
+            // 按定制指标列表匹配值
+            Map<String, Double> values = new LinkedHashMap<>();
+            for (MonitorCustomMetric cm : metrics) {
+                String raw = valueMap.get(cm.getMetricKey());
+                double val = -1; // -1 表示未找到
+                if (raw != null) {
+                    try {
+                        val = Double.parseDouble(raw);
+                    } catch (NumberFormatException e) {
+                        // 非数值型指标，用 -1 标记
+                        val = -1;
+                    }
+                }
+                values.put(cm.getMetricKey(), val);
+            }
+
+            // 同时写入旧列兼容
+            Float cpu = null, mem = null, disk = null;
+            if (values.containsKey("cpu_usage")) cpu = values.get("cpu_usage").floatValue();
+            if (values.containsKey("mem_usage")) mem = values.get("mem_usage").floatValue();
+            if (values.containsKey("disk_usage")) disk = values.get("disk_usage").floatValue();
 
             MonitorHistory history = new MonitorHistory();
             history.setTaskId(task.getId());
-            history.setCpuUsage((float) cpu);
-            history.setMemUsage((float) mem);
-            history.setDiskUsage((float) disk);
+            history.setCpuUsage(cpu);
+            history.setMemUsage(mem);
+            history.setDiskUsage(disk);
+            history.setMetricValues(objectMapper.writeValueAsString(values));
             history.setRecordTime(LocalDateTime.now());
             historyMapper.insert(history);
 
-            log.debug("任务 {} 采集完成: CPU={}%, MEM={}%, DISK={}%", task.getId(),
-                    String.format("%.1f", cpu), String.format("%.1f", mem), String.format("%.1f", disk));
+            log.debug("任务 {} 采集完成: {} 个指标", task.getId(), values.size());
         } catch (Exception e) {
             log.warn("任务 {} 采集 Exporter 失败: {}", task.getId(), e.getMessage());
             // 写入 -1 表示采集失败
@@ -191,8 +239,30 @@ public class MonitorSampleScheduler {
             history.setCpuUsage(-1f);
             history.setMemUsage(-1f);
             history.setDiskUsage(-1f);
+            Map<String, Double> failValues = new LinkedHashMap<>();
+            for (MonitorCustomMetric cm : metrics) {
+                failValues.put(cm.getMetricKey(), -1.0);
+            }
+            try {
+                history.setMetricValues(objectMapper.writeValueAsString(failValues));
+            } catch (Exception ex) {
+                log.error("序列化失败值异常", ex);
+            }
             history.setRecordTime(LocalDateTime.now());
             historyMapper.insert(history);
+        }
+    }
+
+    /**
+     * 反序列化 metricIds JSON 字符串。
+     */
+    private List<Integer> parseMetricIds(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<Integer>>() {});
+        } catch (Exception e) {
+            log.warn("解析 metricIds JSON 失败: {}", json, e);
+            return List.of();
         }
     }
 }

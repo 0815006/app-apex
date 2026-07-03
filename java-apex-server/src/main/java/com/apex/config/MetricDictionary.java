@@ -444,6 +444,7 @@ public final class MetricDictionary {
         entry(list, "windows_tcp_segments_retransmitted_total","TCP段重传总数");
         entry(list, "windows_tcp_segments_sent_total",       "TCP段发送总数");
         entry(list, "windows_tcp_segments_total",            "TCP段总数");
+        entry(list, "node_listening_port",                   "Linux监听端口");
         entry(list, "windows_listening_port",                "Windows监听端口");
 
         // ==================== Windows CPU ====================

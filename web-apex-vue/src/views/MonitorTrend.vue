@@ -43,7 +43,20 @@
                 <span>{{ formatTime(t.startTime) }} ~ {{ formatTime(t.endTime) }}</span>
               </div>
               <div class="task-row-meta">
-                频率: {{ t.collectInterval }}秒
+                <span>频率: {{ t.collectInterval }}秒</span>
+                <span v-if="t.metricInfos && t.metricInfos.length > 0" class="task-row-metrics">
+                  |
+                  <el-tag
+                    v-for="mi in t.metricInfos.slice(0, 3)"
+                    :key="mi.id"
+                    size="small"
+                    type="info"
+                    class="metric-mini-tag"
+                  >
+                    {{ mi.displayName }}
+                  </el-tag>
+                  <span v-if="t.metricInfos.length > 3" class="more-metrics">+{{ t.metricInfos.length - 3 }}</span>
+                </span>
               </div>
             </div>
           </template>
@@ -66,12 +79,17 @@
         <p>任务尚未开始，预计于 {{ formatTime(selectedTask.startTime) }} 激活采样...</p>
       </div>
 
-      <!-- RUNNING 或 FINISHED 状态 — ECharts 图 -->
+      <!-- RUNNING 或 FINISHED 状态 — 动态 ECharts 图 -->
       <div v-else class="chart-container">
         <div class="chart-legend">
-          <span class="legend-item"><i style="background:#F56C6C"></i> CPU</span>
-          <span class="legend-item"><i style="background:#409EFF"></i> 内存</span>
-          <span class="legend-item"><i style="background:#67C23A"></i> 磁盘</span>
+          <span
+            v-for="(info, idx) in selectedTask.metricInfos"
+            :key="info.id"
+            class="legend-item"
+          >
+            <i :style="{ background: getMetricColor(idx) }"></i>
+            {{ info.displayName }}
+          </span>
           <el-tag
             :type="selectedTask.status === 'RUNNING' ? 'warning' : 'success'"
             size="small"
@@ -89,10 +107,9 @@
 
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import type { MonitorMachine, SampleTask, HistoryPoint } from '@/types/monitor'
-import { getMachineList, getSampleTaskList, getTaskHistory, getTaskHistoryLatest, deleteSampleTask } from '@/api/monitor'
+import { getMachineList, getSampleTaskList, getTaskHistory, getTaskHistoryLatest } from '@/api/monitor'
 import SampleTaskForm from '@/components/monitor/SampleTaskForm.vue'
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
@@ -114,6 +131,18 @@ echarts.use([
   DataZoomComponent,
   CanvasRenderer,
 ])
+
+// ============ 动态调色板 ============
+const COLOR_PALETTE = [
+  '#F56C6C', '#409EFF', '#67C23A', '#E6A23C', '#8B5CF6',
+  '#06B6D4', '#F97316', '#EC4899', '#14B8A6', '#6366F1',
+  '#EF4444', '#3B82F6', '#22C55E', '#F59E0B', '#A855F7',
+  '#10B981', '#D946EF', '#0EA5E9', '#84CC16', '#F43F5E',
+]
+
+function getMetricColor(index: number): string {
+  return COLOR_PALETTE[index % COLOR_PALETTE.length]
+}
 
 // ============ 弹窗控制 ============
 const showTaskDialog = ref(false)
@@ -148,7 +177,6 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 
 function selectTask(task: SampleTask) {
   selectedTask.value = task
-  // 清理旧定时器
   stopPolling()
 
   if (task.status === 'FINISHED') {
@@ -156,7 +184,6 @@ function selectTask(task: SampleTask) {
   } else if (task.status === 'RUNNING') {
     loadFullHistory(task.id).then(() => startPolling(task))
   }
-  // WAITING 仅显示提示
 }
 
 // ============ ECharts ============
@@ -164,12 +191,6 @@ const chartRef = ref<HTMLDivElement | null>(null)
 const chartLoading = ref(false)
 let chartInstance: echarts.ECharts | null = null
 const historyData = ref<HistoryPoint[]>([])
-
-const CHART_COLORS = {
-  cpu: '#F56C6C',
-  mem: '#409EFF',
-  disk: '#67C23A',
-}
 
 function initChart() {
   if (!chartRef.value) return
@@ -185,21 +206,23 @@ function handleResize() {
   chartInstance?.resize()
 }
 
-function getBaseOption() {
+/** 根据选中任务的 metricInfos 动态生成 ECharts option */
+function buildDynamicOption() {
+  const task = selectedTask.value
+  if (!task || task.metricInfos.length === 0) return {}
+
+  const metricKeys = task.metricInfos.map(m => m.metricKey)
+  const displayNames = task.metricInfos.map(m => m.displayName)
+
   return {
     tooltip: {
       trigger: 'axis' as const,
       axisPointer: { type: 'cross' as const },
-      valueFormatter: (value: unknown) => {
-        if (typeof value === 'number') {
-          return value === -1 ? '--' : value.toFixed(1) + '%'
-        }
-        return String(value)
-      },
     },
     legend: {
-      data: ['CPU', '内存', '磁盘'],
+      data: displayNames,
       bottom: 30,
+      type: 'scroll' as const,
     },
     grid: {
       top: 20,
@@ -218,87 +241,73 @@ function getBaseOption() {
     },
     yAxis: {
       type: 'value' as const,
-      name: '使用率 (%)',
-      min: 0,
-      max: 100,
-      axisLabel: { formatter: '{value}%' },
+      name: '值',
+      axisLabel: {},
     },
     dataZoom: [
       { type: 'slider' as const, start: 0, end: 100, bottom: 0 },
       { type: 'inside' as const },
     ],
-    series: [
-      {
-        name: 'CPU',
-        type: 'line',
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { color: CHART_COLORS.cpu, width: 2 },
-        itemStyle: { color: CHART_COLORS.cpu },
-        data: [] as [number, number][],
-      },
-      {
-        name: '内存',
-        type: 'line',
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { color: CHART_COLORS.mem, width: 2 },
-        itemStyle: { color: CHART_COLORS.mem },
-        data: [] as [number, number][],
-      },
-      {
-        name: '磁盘',
-        type: 'line',
-        smooth: true,
-        showSymbol: false,
-        lineStyle: { color: CHART_COLORS.disk, width: 2 },
-        itemStyle: { color: CHART_COLORS.disk },
-        data: [] as [number, number][],
-      },
-    ],
+    series: metricKeys.map((key, idx) => ({
+      name: displayNames[idx],
+      type: 'line',
+      smooth: true,
+      showSymbol: false,
+      lineStyle: { color: getMetricColor(idx), width: 2 },
+      itemStyle: { color: getMetricColor(idx) },
+      data: [] as [number, number][],
+    })),
   }
 }
 
-function mapDataToSeries(data: HistoryPoint[]): [number[][], number[][], number[][]] {
-  const cpuData: number[][] = []
-  const memData: number[][] = []
-  const diskData: number[][] = []
+/** 将 HistoryPoint[] 映射为动态 series 数据 */
+function mapDataToSeries(data: HistoryPoint[], metricKeys: string[]): number[][][] {
+  const result: number[][][] = metricKeys.map(() => [])
   for (const p of data) {
     const t = new Date(p.recordTime).getTime()
-    cpuData.push([t, p.cpuUsage === -1 ? null as unknown as number : p.cpuUsage])
-    memData.push([t, p.memUsage === -1 ? null as unknown as number : p.memUsage])
-    diskData.push([t, p.diskUsage === -1 ? null as unknown as number : p.diskUsage])
+    for (let i = 0; i < metricKeys.length; i++) {
+      const key = metricKeys[i]
+      const val = p.values[key]
+      result[i].push([t, val != null && val !== -1 ? val : (null as unknown as number)])
+    }
   }
-  return [cpuData, memData, diskData]
+  return result
 }
 
 function renderChart(data: HistoryPoint[]) {
   if (!chartInstance) return
-  const [cpu, mem, disk] = mapDataToSeries(data)
+  const task = selectedTask.value
+  if (!task || task.metricInfos.length === 0) return
+
+  const metricKeys = task.metricInfos.map(m => m.metricKey)
+  const baseOption = buildDynamicOption()
+  const seriesData = mapDataToSeries(data, metricKeys)
+
   chartInstance.setOption({
-    ...getBaseOption(),
-    series: [
-      { ...getBaseOption().series[0], data: cpu },
-      { ...getBaseOption().series[1], data: mem },
-      { ...getBaseOption().series[2], data: disk },
-    ],
+    ...baseOption,
+    series: seriesData.map((d, idx) => ({
+      ...(baseOption.series as Array<Record<string, unknown>>)[idx],
+      data: d,
+    })),
   }, true)
 }
 
 function appendDataPoint(point: HistoryPoint) {
   if (!chartInstance) return
-  const t = new Date(point.recordTime).getTime()
-  const cpuVal = point.cpuUsage === -1 ? null : point.cpuUsage
-  const memVal = point.memUsage === -1 ? null : point.memUsage
-  const diskVal = point.diskUsage === -1 ? null : point.diskUsage
+  const task = selectedTask.value
+  if (!task || task.metricInfos.length === 0) return
 
-  chartInstance.setOption({
-    series: [
-      { data: [[t, cpuVal]] },
-      { data: [[t, memVal]] },
-      { data: [[t, diskVal]] },
-    ],
+  const t = new Date(point.recordTime).getTime()
+  const metricKeys = task.metricInfos.map(m => m.metricKey)
+
+  const seriesUpdates = metricKeys.map((key) => {
+    const val = point.values[key]
+    const v = val != null && val !== -1 ? val : null
+    const pointData: [number, number | null][] = [[t, v]]
+    return { data: pointData }
   })
+
+  chartInstance.setOption({ series: seriesUpdates })
 }
 
 async function loadFullHistory(taskId: number) {
@@ -319,7 +328,6 @@ async function fetchLatest(taskId: number) {
   try {
     const point = await getTaskHistoryLatest(taskId)
     if (point && point.id && selectedTask.value?.id === taskId) {
-      // 检查是否已存在（去重）
       const lastPoint = historyData.value[historyData.value.length - 1]
       if (!lastPoint || point.id !== lastPoint.id) {
         historyData.value.push(point)
@@ -353,10 +361,8 @@ function stopPolling() {
 // ============ 工具方法 ============
 function formatTime(t: string): string {
   if (!t) return ''
-  // 统一格式化：2026-07-01T12:00:00 → 07-01 12:00
   const d = new Date(t)
   if (isNaN(d.getTime())) {
-    // 尝试 "2026-07-01 12:00:00" 格式
     return t.substring(5, 16).replace(' ', ' ')
   }
   return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
@@ -484,9 +490,30 @@ onUnmounted(() => {
   color: #909399;
 }
 .task-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: #C0C4CC;
   margin-top: 2px;
+  flex-wrap: wrap;
+}
+
+.task-row-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #C0C4CC;
+}
+
+.metric-mini-tag {
+  transform: scale(0.8);
+  transform-origin: left center;
+}
+
+.more-metrics {
+  font-size: 11px;
+  color: #909399;
 }
 
 /* 右侧展示区 */
@@ -523,6 +550,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 16px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
 .legend-item {

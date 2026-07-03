@@ -36,6 +36,9 @@ public class MonitorSampleTask {
     /** WAITING(等待), RUNNING(采集中), FINISHED(已结束) */
     private String status;
 
+    /** 关联的定制指标ID列表，JSON数组如 [1,3,5] */
+    private String metricIds;
+
     /** 创建时间 */
     private LocalDateTime createTime;
 

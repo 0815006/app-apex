@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# Apex Port Collector Installer (Linux)
+# Port Collector Installer (Linux)
 # 部署 collect-ports.sh 并注册 systemd timer 每 10 秒触发。
 # 用法: sudo ./install-port-collector.sh
 # ============================================================
@@ -9,7 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEXTFILE_DIR="${SCRIPT_DIR}/textfile"
 
-echo "=== Apex Port Collector Installer ==="
+echo "=== Port Collector Installer ==="
 echo ""
 
 if [[ $EUID -ne 0 ]]; then

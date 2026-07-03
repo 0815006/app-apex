@@ -1,5 +1,6 @@
 [Unit]
-Description=Apex Port Collector Timer (every 10 seconds)
+Description=Port Collector Timer
+After=network.target
 
 [Timer]
 OnBootSec=10

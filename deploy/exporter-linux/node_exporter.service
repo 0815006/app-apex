@@ -1,5 +1,5 @@
 [Unit]
-Description=Node Exporter (Apex Monitor)
+Description=Node Exporter
 Documentation=https://prometheus.io/docs/guides/node-exporter/
 After=network.target
 

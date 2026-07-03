@@ -5,6 +5,8 @@ import com.apex.entity.*;
 import com.apex.mapper.*;
 import com.apex.model.*;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -35,6 +37,8 @@ public class MonitorService {
     private final MonitorCustomMetricMapper customMetricMapper;
     private final MonitorSampleTaskMapper sampleTaskMapper;
     private final MonitorHistoryMapper historyMapper;
+
+    private final ObjectMapper objectMapper;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
@@ -602,19 +606,47 @@ public class MonitorService {
                 new LambdaQueryWrapper<MonitorSampleTask>()
                         .orderByDesc(MonitorSampleTask::getCreateTime));
 
+        // 一次性加载所有机器和定制指标
         Map<Integer, String> machineNameMap = machineMapper.selectList(null).stream()
                 .collect(Collectors.toMap(MonitorMachine::getId, MonitorMachine::getMachineName));
 
+        // 收集所有任务涉及的 metricIds，批量查询
+        Set<Integer> allMetricIds = new HashSet<>();
+        for (MonitorSampleTask t : tasks) {
+            List<Integer> ids = parseMetricIds(t.getMetricIds());
+            allMetricIds.addAll(ids);
+        }
+        Map<Integer, MonitorCustomMetric> metricMap = Collections.emptyMap();
+        if (!allMetricIds.isEmpty()) {
+            metricMap = customMetricMapper.selectBatchIds(allMetricIds).stream()
+                    .collect(Collectors.toMap(MonitorCustomMetric::getId, cm -> cm));
+        }
+
+        final Map<Integer, MonitorCustomMetric> finalMetricMap = metricMap;
+
         return tasks.stream()
-                .map(t -> new SampleTaskVO(
-                        t.getId(),
-                        t.getMachineId(),
-                        machineNameMap.getOrDefault(t.getMachineId(), "未知"),
-                        t.getTaskName(),
-                        t.getStartTime(),
-                        t.getEndTime(),
-                        t.getCollectInterval(),
-                        t.getStatus()))
+                .map(t -> {
+                    List<Integer> ids = parseMetricIds(t.getMetricIds());
+                    List<MetricInfo> infos = ids.stream()
+                            .filter(finalMetricMap::containsKey)
+                            .map(id -> {
+                                MonitorCustomMetric cm = finalMetricMap.get(id);
+                                return new MetricInfo(cm.getId(), cm.getMetricKey(),
+                                        cm.getDisplayName(), cm.getCategory());
+                            })
+                            .collect(Collectors.toList());
+                    return new SampleTaskVO(
+                            t.getId(),
+                            t.getMachineId(),
+                            machineNameMap.getOrDefault(t.getMachineId(), "未知"),
+                            t.getTaskName(),
+                            t.getStartTime(),
+                            t.getEndTime(),
+                            t.getCollectInterval(),
+                            t.getStatus(),
+                            ids,
+                            infos);
+                })
                 .collect(Collectors.toList());
     }
 
@@ -629,6 +661,16 @@ public class MonitorService {
             throw new com.apex.common.BusinessException(404, "机器不存在");
         }
 
+        // 校验所有 metricId 都属于该机器且可见
+        List<MonitorCustomMetric> metrics = customMetricMapper.selectList(
+                new LambdaQueryWrapper<MonitorCustomMetric>()
+                        .eq(MonitorCustomMetric::getMachineId, dto.getMachineId())
+                        .eq(MonitorCustomMetric::getIsVisible, true)
+                        .in(MonitorCustomMetric::getId, dto.getMetricIds()));
+        if (metrics.size() != dto.getMetricIds().size()) {
+            throw new com.apex.common.BusinessException(400, "部分指标无效或不属于该机器");
+        }
+
         MonitorSampleTask task = new MonitorSampleTask();
         task.setMachineId(dto.getMachineId());
         task.setTaskName(dto.getTaskName());
@@ -636,6 +678,7 @@ public class MonitorService {
         task.setEndTime(dto.getEndTime());
         task.setCollectInterval(dto.getCollectInterval());
         task.setStatus("WAITING");
+        task.setMetricIds(serializeMetricIds(dto.getMetricIds()));
         sampleTaskMapper.insert(task);
     }
 
@@ -655,9 +698,7 @@ public class MonitorService {
         return historyList.stream()
                 .map(h -> new MonitorHistoryVO(
                         h.getId(),
-                        h.getCpuUsage(),
-                        h.getMemUsage(),
-                        h.getDiskUsage(),
+                        parseValues(h),
                         h.getRecordTime()))
                 .collect(Collectors.toList());
     }
@@ -673,8 +714,58 @@ public class MonitorService {
             return null;
         }
         MonitorHistory h = historyList.get(0);
-        return new MonitorHistoryVO(
-                h.getId(), h.getCpuUsage(), h.getMemUsage(), h.getDiskUsage(), h.getRecordTime());
+        return new MonitorHistoryVO(h.getId(), parseValues(h), h.getRecordTime());
+    }
+
+    // =============================================
+    // 指标ID序列化/反序列化工具
+    // =============================================
+
+    /**
+     * 将 metricIds JSON 字符串反序列化为 List。
+     */
+    List<Integer> parseMetricIds(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<Integer>>() {});
+        } catch (Exception e) {
+            log.warn("解析 metricIds JSON 失败: {}", json, e);
+            return List.of();
+        }
+    }
+
+    /**
+     * 将 List<Integer> 序列化为 JSON 字符串。
+     */
+    String serializeMetricIds(List<Integer> ids) {
+        try {
+            return objectMapper.writeValueAsString(ids);
+        } catch (Exception e) {
+            log.error("序列化 metricIds 失败", e);
+            return "[]";
+        }
+    }
+
+    /**
+     * 从 MonitorHistory 解析指标值 Map。
+     * 优先使用 metricValues JSON，兼容旧数据的 cpu/mem/disk 固定列。
+     */
+    private Map<String, Double> parseValues(MonitorHistory h) {
+        Map<String, Double> values = new LinkedHashMap<>();
+        String json = h.getMetricValues();
+        if (json != null && !json.isBlank()) {
+            try {
+                values.putAll(objectMapper.readValue(json, new TypeReference<Map<String, Double>>() {}));
+                return values;
+            } catch (Exception e) {
+                log.warn("解析 metricValues JSON 失败: {}", json, e);
+            }
+        }
+        // 兼容旧数据：从固定列中读取
+        if (h.getCpuUsage() != null) values.put("cpu_usage", (double) h.getCpuUsage());
+        if (h.getMemUsage() != null) values.put("mem_usage", (double) h.getMemUsage());
+        if (h.getDiskUsage() != null) values.put("disk_usage", (double) h.getDiskUsage());
+        return values;
     }
 
     // =============================================

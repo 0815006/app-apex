@@ -1,10 +1,12 @@
 package com.apex.model;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 新建采样任务的请求体。
@@ -26,4 +28,7 @@ public class MonitorSampleTaskDTO {
 
     @NotNull(message = "采集频率不能为空")
     private Integer collectInterval;
+
+    @NotEmpty(message = "至少选择一个定制指标")
+    private List<Integer> metricIds;
 }

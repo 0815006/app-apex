@@ -20,14 +20,17 @@ public class MonitorHistory {
     /** 关联任务ID */
     private Integer taskId;
 
-    /** CPU使用率(%) */
+    /** CPU使用率(%) — 兼容旧数据 */
     private Float cpuUsage;
 
-    /** 内存使用率(%) */
+    /** 内存使用率(%) — 兼容旧数据 */
     private Float memUsage;
 
-    /** 主磁盘使用率(%) */
+    /** 主磁盘使用率(%) — 兼容旧数据 */
     private Float diskUsage;
+
+    /** 指标值快照 JSON，如 {"cpu_usage":45.2, "mem_usage":62.1} */
+    private String metricValues;
 
     /** 记录生成时间 */
     private LocalDateTime recordTime;

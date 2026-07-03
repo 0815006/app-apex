@@ -1,6 +1,5 @@
 [Unit]
-Description=Apex Port Collector (one-shot)
-After=network.target
+Description=Port Collector - oneshot
 
 [Service]
 Type=oneshot

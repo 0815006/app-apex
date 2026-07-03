@@ -102,6 +102,14 @@ export interface AddCustomMetricReq {
 
 // ============ 采样任务 ============
 
+/** 指标简要信息（来自后端 MetricInfo） */
+export interface MetricInfo {
+  id: number
+  metricKey: string
+  displayName: string
+  category: string
+}
+
 export interface SampleTask {
   id: number
   machineId: number
@@ -111,6 +119,8 @@ export interface SampleTask {
   endTime: string
   collectInterval: number
   status: 'WAITING' | 'RUNNING' | 'FINISHED'
+  metricIds: number[]
+  metricInfos: MetricInfo[]
 }
 
 export interface SampleTaskForm {
@@ -119,14 +129,13 @@ export interface SampleTaskForm {
   startTime: string
   endTime: string
   collectInterval: number
+  metricIds: number[]
 }
 
-// ============ 历史数据点 ============
+// ============ 历史数据点（动态指标值） ============
 
 export interface HistoryPoint {
   id: number
-  cpuUsage: number
-  memUsage: number
-  diskUsage: number
+  values: Record<string, number>  // key: metricKey, value: 指标当前值
   recordTime: string
 }

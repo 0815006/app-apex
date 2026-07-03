@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# Apex Port Collector Uninstaller (Linux)
+# Port Collector Uninstaller (Linux)
 # 停止并移除 systemd timer 和 service 单元。
 # 用法: sudo ./uninstall-port-collector.sh
 # ============================================================
@@ -8,7 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "=== Apex Port Collector Uninstaller ==="
+echo "=== Port Collector Uninstaller ==="
 echo ""
 
 if [[ $EUID -ne 0 ]]; then

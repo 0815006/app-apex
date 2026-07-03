@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # ============================================================
-# Apex Node Exporter Uninstaller (Linux)
+# Node Exporter Uninstaller (Linux)
 # 停止并移除 systemd 服务，保留二进制和配置文件。
 # 用法: sudo ./uninstall-exporter.sh
 # ============================================================
 set -euo pipefail
 
-echo "=== Apex Node Exporter Uninstaller ==="
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+echo "=== Node Exporter Uninstaller ==="
 echo ""
 
 if [[ $EUID -ne 0 ]]; then
@@ -26,5 +28,5 @@ systemctl daemon-reload
 
 echo ""
 echo "=== Uninstallation complete ==="
-echo "Note: node_exporter binary / collect-ports.sh / textfile/ preserved in $(dirname "$0")"
+echo "Note: node_exporter binary / collect-ports.sh / textfile/ preserved in ${SCRIPT_DIR}"
 echo "      Delete the directory manually if you want a full cleanup."
