@@ -33,6 +33,33 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MonitorService {
 
+    // =============================================
+    // 虚拟系统内置指标（ID负数，不在数据库中存储）
+    // =============================================
+
+    /** 系统内置指标定义列表。ID 为负数以避免与数据库自增ID冲突。 */
+    public static final List<CustomMetricVO> SYS_METRICS = List.of(
+            new CustomMetricVO(-1, null, "__sys_cpu_usage",    "__sys_cpu_usage",    "CPU使用率",    "cpu",     true, null),
+            new CustomMetricVO(-2, null, "__sys_mem_usage",    "__sys_mem_usage",    "内存使用率",   "memory",  true, null),
+            new CustomMetricVO(-3, null, "__sys_disk_usage",   "__sys_disk_usage",   "磁盘使用率",   "disk",    true, null),
+            new CustomMetricVO(-4, null, "__sys_net_rx_bytes", "__sys_net_rx_bytes", "网络接收字节", "network", true, null),
+            new CustomMetricVO(-5, null, "__sys_net_tx_bytes", "__sys_net_tx_bytes", "网络发送字节", "network", true, null),
+            new CustomMetricVO(-6, null, "__sys_uptime_seconds","__sys_uptime_seconds","运行时间(秒)", "system",  true, null)
+    );
+
+    private static final Map<Integer, CustomMetricVO> SYS_METRIC_MAP = SYS_METRICS.stream()
+            .collect(Collectors.toMap(CustomMetricVO::id, m -> m));
+
+    /** 判断是否为系统内置指标ID（负数）。 */
+    public static boolean isSysMetricId(Integer id) {
+        return id != null && id < 0;
+    }
+
+    /** 根据ID获取系统内置指标定义，未找到返回 null。 */
+    public static CustomMetricVO getSysMetric(Integer id) {
+        return SYS_METRIC_MAP.get(id);
+    }
+
     private final MonitorMachineMapper machineMapper;
     private final MonitorCustomMetricMapper customMetricMapper;
     private final MonitorSampleTaskMapper sampleTaskMapper;
@@ -302,14 +329,16 @@ public class MonitorService {
     // =============================================
 
     /**
-     * 查询某台机器已定制的指标列表。
+     * 查询某台机器已定制的指标列表（含系统内置虚拟指标）。
+     * 系统内置指标始终排在列表最前面。
      */
     public List<CustomMetricVO> getCustomizedMetrics(Integer machineId) {
         List<MonitorCustomMetric> list = customMetricMapper.selectList(
                 new LambdaQueryWrapper<MonitorCustomMetric>()
                         .eq(MonitorCustomMetric::getMachineId, machineId)
                         .eq(MonitorCustomMetric::getIsVisible, true));
-        return list.stream()
+        List<CustomMetricVO> result = new ArrayList<>(SYS_METRICS);
+        list.stream()
                 .map(cm -> new CustomMetricVO(
                         cm.getId(),
                         cm.getMachineId(),
@@ -319,7 +348,8 @@ public class MonitorService {
                         cm.getCategory(),
                         cm.getIsVisible(),
                         cm.getCreateTime() != null ? cm.getCreateTime().toString() : null))
-                .collect(Collectors.toList());
+                .forEach(result::add);
+        return result;
     }
 
     /**
@@ -616,9 +646,13 @@ public class MonitorService {
             List<Integer> ids = parseMetricIds(t.getMetricIds());
             allMetricIds.addAll(ids);
         }
+        // 只对正数ID（数据库记录）做批量查询，负数ID是系统内置指标
+        Set<Integer> positiveIds = allMetricIds.stream()
+                .filter(id -> id > 0)
+                .collect(Collectors.toSet());
         Map<Integer, MonitorCustomMetric> metricMap = Collections.emptyMap();
-        if (!allMetricIds.isEmpty()) {
-            metricMap = customMetricMapper.selectBatchIds(allMetricIds).stream()
+        if (!positiveIds.isEmpty()) {
+            metricMap = customMetricMapper.selectBatchIds(positiveIds).stream()
                     .collect(Collectors.toMap(MonitorCustomMetric::getId, cm -> cm));
         }
 
@@ -628,12 +662,19 @@ public class MonitorService {
                 .map(t -> {
                     List<Integer> ids = parseMetricIds(t.getMetricIds());
                     List<MetricInfo> infos = ids.stream()
-                            .filter(finalMetricMap::containsKey)
                             .map(id -> {
+                                if (isSysMetricId(id)) {
+                                    CustomMetricVO sys = getSysMetric(id);
+                                    return sys != null ? new MetricInfo(
+                                            sys.id(), sys.metricKey(),
+                                            sys.displayName(), sys.category()) : null;
+                                }
                                 MonitorCustomMetric cm = finalMetricMap.get(id);
+                                if (cm == null) return null;
                                 return new MetricInfo(cm.getId(), cm.getMetricKey(),
                                         cm.getDisplayName(), cm.getCategory());
                             })
+                            .filter(Objects::nonNull)
                             .collect(Collectors.toList());
                     return new SampleTaskVO(
                             t.getId(),
@@ -661,14 +702,29 @@ public class MonitorService {
             throw new com.apex.common.BusinessException(404, "机器不存在");
         }
 
-        // 校验所有 metricId 都属于该机器且可见
-        List<MonitorCustomMetric> metrics = customMetricMapper.selectList(
-                new LambdaQueryWrapper<MonitorCustomMetric>()
-                        .eq(MonitorCustomMetric::getMachineId, dto.getMachineId())
-                        .eq(MonitorCustomMetric::getIsVisible, true)
-                        .in(MonitorCustomMetric::getId, dto.getMetricIds()));
-        if (metrics.size() != dto.getMetricIds().size()) {
-            throw new com.apex.common.BusinessException(400, "部分指标无效或不属于该机器");
+        // 校验所有 metricId：正数查DB，负数校验是否为系统内置指标
+        List<Integer> positiveIds = dto.getMetricIds().stream()
+                .filter(id -> id > 0).toList();
+        List<Integer> negativeIds = dto.getMetricIds().stream()
+                .filter(id -> id < 0).toList();
+
+        // 负数部分：校验是否为已知系统内置指标
+        for (Integer nid : negativeIds) {
+            if (!isSysMetricId(nid) || getSysMetric(nid) == null) {
+                throw new com.apex.common.BusinessException(400, "无效的系统内置指标ID: " + nid);
+            }
+        }
+
+        // 正数部分：查DB校验属于该机器且可见
+        if (!positiveIds.isEmpty()) {
+            List<MonitorCustomMetric> metrics = customMetricMapper.selectList(
+                    new LambdaQueryWrapper<MonitorCustomMetric>()
+                            .eq(MonitorCustomMetric::getMachineId, dto.getMachineId())
+                            .eq(MonitorCustomMetric::getIsVisible, true)
+                            .in(MonitorCustomMetric::getId, positiveIds));
+            if (metrics.size() != positiveIds.size()) {
+                throw new com.apex.common.BusinessException(400, "部分指标无效或不属于该机器");
+            }
         }
 
         MonitorSampleTask task = new MonitorSampleTask();

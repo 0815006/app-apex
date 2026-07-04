@@ -232,6 +232,7 @@ public final class MetricDictionary {
         entry(list, "node_disk_flush_requests_total",          "磁盘Flush请求总数");
         entry(list, "node_disk_io_now",                        "磁盘当前IO数");
         entry(list, "node_disk_io_time_weighted_seconds_total","磁盘IO加权耗时(秒)");
+        entry(list, "node_disk_filesystem_info",               "磁盘文件系统信息");
 
         // ==================== Filesystem ====================
         entry(list, "node_filesystem_size_bytes",    "文件系统总容量(字节)");

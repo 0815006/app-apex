@@ -8,6 +8,7 @@ import com.apex.mapper.MonitorCustomMetricMapper;
 import com.apex.mapper.MonitorHistoryMapper;
 import com.apex.mapper.MonitorMachineMapper;
 import com.apex.mapper.MonitorSampleTaskMapper;
+import com.apex.model.CustomMetricVO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -165,6 +166,7 @@ public class MonitorSampleScheduler {
 
     /**
      * 执行一次采样 — 按任务关联的定制指标 metricKey 动态采集并写入 history。
+     * 支持系统内置虚拟指标（负数ID）和数据库定制指标（正数ID）混合采集。
      */
     private void collectSample(MonitorSampleTask task) {
         MonitorMachine machine = machineMapper.selectById(task.getMachineId());
@@ -173,22 +175,24 @@ public class MonitorSampleScheduler {
             return;
         }
 
-        // 解析任务关联的指标ID列表
-        List<Integer> metricIds = parseMetricIds(task.getMetricIds());
-        if (metricIds.isEmpty()) {
+        // 解析任务关联的指标ID列表，拆分为系统内置（负数）和DB定制（正数）
+        List<Integer> allMetricIds = parseMetricIds(task.getMetricIds());
+        if (allMetricIds.isEmpty()) {
             log.warn("任务 {} 未关联任何定制指标，跳过采集", task.getId());
             return;
         }
 
-        // 查询对应的定制指标记录
-        List<MonitorCustomMetric> metrics = customMetricMapper.selectBatchIds(metricIds);
-        if (metrics.isEmpty()) {
-            log.warn("任务 {} 关联的定制指标均已删除，跳过采集", task.getId());
-            return;
-        }
+        List<Integer> positiveIds = allMetricIds.stream().filter(id -> id > 0).toList();
+        List<Integer> negativeIds = allMetricIds.stream().filter(MonitorService::isSysMetricId).toList();
+
+        // 查询DB定制指标记录
+        List<MonitorCustomMetric> dbMetrics = positiveIds.isEmpty()
+                ? List.of()
+                : customMetricMapper.selectBatchIds(positiveIds);
 
         try {
             String metricsText = monitorService.fetchMetrics(machine);
+            String osType = machine.getOsType();
 
             // 解析全量指标
             List<MonitorService.ParsedMetric> allMetrics = monitorService.parseAllMetrics(metricsText);
@@ -199,50 +203,59 @@ public class MonitorSampleScheduler {
                 valueMap.put(pm.metricKey(), pm.value());
             }
 
-            // 按定制指标列表匹配值
+            // ===== 1. 计算系统内置指标 + 网络收发 =====
+            double cpuUsage = monitorService.parseCpuUsage(metricsText, osType);
+            double memUsage = monitorService.parseMemUsage(metricsText, osType);
+            double diskUsage = monitorService.parseDiskUsage(metricsText, osType);
+            long[] netBytes = monitorService.parseNetworkBytes(metricsText, osType);
+            long uptime = monitorService.parseUptimeSeconds(metricsText, osType);
+
             Map<String, Double> values = new LinkedHashMap<>();
-            for (MonitorCustomMetric cm : metrics) {
+
+            // 按需填充系统内置指标
+            if (negativeIds.contains(-1)) values.put("__sys_cpu_usage", cpuUsage);
+            if (negativeIds.contains(-2)) values.put("__sys_mem_usage", memUsage);
+            if (negativeIds.contains(-3)) values.put("__sys_disk_usage", diskUsage);
+            if (negativeIds.contains(-4)) values.put("__sys_net_rx_bytes", (double) netBytes[0]);
+            if (negativeIds.contains(-5)) values.put("__sys_net_tx_bytes", (double) netBytes[1]);
+            if (negativeIds.contains(-6)) values.put("__sys_uptime_seconds", (double) uptime);
+
+            // ===== 2. 匹配DB定制指标值 =====
+            for (MonitorCustomMetric cm : dbMetrics) {
                 String raw = valueMap.get(cm.getMetricKey());
-                double val = -1; // -1 表示未找到
+                double val = -1;
                 if (raw != null) {
                     try {
                         val = Double.parseDouble(raw);
                     } catch (NumberFormatException e) {
-                        // 非数值型指标，用 -1 标记
                         val = -1;
                     }
                 }
                 values.put(cm.getMetricKey(), val);
             }
 
-            // 同时写入旧列兼容
-            Float cpu = null, mem = null, disk = null;
-            if (values.containsKey("cpu_usage")) cpu = values.get("cpu_usage").floatValue();
-            if (values.containsKey("mem_usage")) mem = values.get("mem_usage").floatValue();
-            if (values.containsKey("disk_usage")) disk = values.get("disk_usage").floatValue();
-
             MonitorHistory history = new MonitorHistory();
             history.setTaskId(task.getId());
-            history.setCpuUsage(cpu);
-            history.setMemUsage(mem);
-            history.setDiskUsage(disk);
-            history.setMetricValues(objectMapper.writeValueAsString(values));
             history.setRecordTime(LocalDateTime.now());
+            history.setMetricValues(objectMapper.writeValueAsString(values));
             historyMapper.insert(history);
 
-            log.debug("任务 {} 采集完成: {} 个指标", task.getId(), values.size());
+            log.debug("任务 {} 采集完成: {} 个指标 (DB: {}, 系统: {})",
+                    task.getId(), values.size(), dbMetrics.size(), negativeIds.size());
         } catch (Exception e) {
             log.warn("任务 {} 采集 Exporter 失败: {}", task.getId(), e.getMessage());
+
             // 写入 -1 表示采集失败
-            MonitorHistory history = new MonitorHistory();
-            history.setTaskId(task.getId());
-            history.setCpuUsage(-1f);
-            history.setMemUsage(-1f);
-            history.setDiskUsage(-1f);
             Map<String, Double> failValues = new LinkedHashMap<>();
-            for (MonitorCustomMetric cm : metrics) {
+            for (Integer nid : negativeIds) {
+                CustomMetricVO sys = MonitorService.getSysMetric(nid);
+                if (sys != null) failValues.put(sys.metricKey(), -1.0);
+            }
+            for (MonitorCustomMetric cm : dbMetrics) {
                 failValues.put(cm.getMetricKey(), -1.0);
             }
+            MonitorHistory history = new MonitorHistory();
+            history.setTaskId(task.getId());
             try {
                 history.setMetricValues(objectMapper.writeValueAsString(failValues));
             } catch (Exception ex) {
