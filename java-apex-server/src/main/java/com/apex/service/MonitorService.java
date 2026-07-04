@@ -778,9 +778,9 @@ public class MonitorService {
     // =============================================
 
     /**
-     * 将 metricIds JSON 字符串反序列化为 List。
+     * 将 metricIds JSON 字符串反序列化为 List。对外暴露供 Scheduler 复用。
      */
-    List<Integer> parseMetricIds(String json) {
+    public List<Integer> parseMetricIds(String json) {
         if (json == null || json.isBlank()) return List.of();
         try {
             return objectMapper.readValue(json, new TypeReference<List<Integer>>() {});
@@ -793,7 +793,7 @@ public class MonitorService {
     /**
      * 将 List<Integer> 序列化为 JSON 字符串。
      */
-    String serializeMetricIds(List<Integer> ids) {
+    private String serializeMetricIds(List<Integer> ids) {
         try {
             return objectMapper.writeValueAsString(ids);
         } catch (Exception e) {
@@ -804,7 +804,7 @@ public class MonitorService {
 
     /**
      * 从 MonitorHistory 解析指标值 Map。
-     * 优先使用 metricValues JSON，兼容旧数据的 cpu/mem/disk 固定列。
+     * V8 之后仅从 metricValues JSON 列读取，旧版固定列已移除。
      */
     private Map<String, Double> parseValues(MonitorHistory h) {
         Map<String, Double> values = new LinkedHashMap<>();
@@ -812,15 +812,10 @@ public class MonitorService {
         if (json != null && !json.isBlank()) {
             try {
                 values.putAll(objectMapper.readValue(json, new TypeReference<Map<String, Double>>() {}));
-                return values;
             } catch (Exception e) {
                 log.warn("解析 metricValues JSON 失败: {}", json, e);
             }
         }
-        // 兼容旧数据：从固定列中读取
-        if (h.getCpuUsage() != null) values.put("cpu_usage", (double) h.getCpuUsage());
-        if (h.getMemUsage() != null) values.put("mem_usage", (double) h.getMemUsage());
-        if (h.getDiskUsage() != null) values.put("disk_usage", (double) h.getDiskUsage());
         return values;
     }
 

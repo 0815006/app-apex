@@ -1,86 +1,95 @@
 <template>
-  <div class="monitor-trend">
-    <!-- 左侧栏 -->
-    <div class="trend-left">
-      <div class="left-section">
-        <div class="section-header">
-          <h4 class="section-title">采样任务</h4>
-          <el-button type="primary" size="small" @click="showTaskDialog = true">
-            <el-icon><Plus /></el-icon>
-            新建
-          </el-button>
+  <div class="flex h-full w-full bg-slate-50/60 font-sans overflow-hidden">
+    <!-- ========== 左侧栏：采样任务列表 ========== -->
+    <aside class="w-80 bg-white/75 backdrop-blur-md border-r border-slate-200/50 flex flex-col shadow-sm z-10">
+      <!-- 顶部工具栏 -->
+      <div class="p-4 flex justify-between items-center border-b border-slate-100">
+        <div class="flex items-center gap-2">
+          <span class="text-xl">📊</span>
+          <span class="text-base font-bold tracking-tight text-slate-800">采样任务</span>
         </div>
-        <SampleTaskForm
-          v-model:visible="showTaskDialog"
-          :machines="machines"
-          @submitted="loadTasks"
-        />
+        <el-button size="small" type="primary" plain class="!rounded-full !px-3" @click="showTaskDialog = true">
+          <el-icon class="mr-1"><Plus /></el-icon>新建
+        </el-button>
       </div>
 
-      <div class="left-section task-list-section">
-        <h4 class="section-title">历史列表</h4>
-        <div v-loading="taskLoading" class="task-table-wrapper">
-          <template v-if="tasks.length > 0">
-            <div
-              v-for="t in tasks"
-              :key="t.id"
-              class="task-row"
-              :class="{ active: selectedTask?.id === t.id }"
-              @click="selectTask(t)"
-            >
-              <div class="task-row-header">
-                <span class="task-name">{{ t.taskName }}</span>
-                <el-tag
-                  :type="statusTagType(t.status)"
-                  size="small"
-                  effect="dark"
-                >
-                  {{ statusLabel(t.status) }}
-                </el-tag>
-              </div>
-              <div class="task-row-sub">
-                <span>{{ t.machineName }}</span>
-                <span>{{ formatTime(t.startTime) }} ~ {{ formatTime(t.endTime) }}</span>
-              </div>
-              <div class="task-row-meta">
-                <span>频率: {{ t.collectInterval }}秒</span>
-                <span v-if="t.metricInfos && t.metricInfos.length > 0" class="task-row-metrics">
-                  |
-                  <el-tag
-                    v-for="mi in t.metricInfos.slice(0, 3)"
-                    :key="mi.id"
-                    size="small"
-                    type="info"
-                    class="metric-mini-tag"
-                  >
-                    {{ mi.displayName }}
-                  </el-tag>
-                  <span v-if="t.metricInfos.length > 3" class="more-metrics">+{{ t.metricInfos.length - 3 }}</span>
-                </span>
-              </div>
-            </div>
+      <!-- 任务列表 -->
+      <div class="flex-1 overflow-y-auto px-2 py-2" v-loading="taskLoading">
+        <el-empty
+          v-if="tasks.length === 0 && !taskLoading"
+          description="暂无采样任务，点击上方新建"
+          :image-size="80"
+          class="mt-8"
+        >
+          <template #image>
+            <div class="text-3xl">📊</div>
           </template>
-          <el-empty v-else description="暂无采样任务" :image-size="80" />
+        </el-empty>
+
+        <div v-else class="trend-task-list">
+          <div
+            v-for="t in tasks"
+            :key="t.id"
+            :class="['task-item', { active: selectedTask?.id === t.id }]"
+            @click="selectTask(t)"
+          >
+            <div class="task-item-header">
+              <span class="task-item-name">{{ t.taskName }}</span>
+              <el-tag
+                :type="statusTagType(t.status)"
+                size="small"
+                effect="dark"
+              >
+                {{ statusLabel(t.status) }}
+              </el-tag>
+            </div>
+            <div class="task-item-sub">
+              <span class="truncate">{{ t.machineName }}</span>
+              <span>{{ formatTime(t.startTime) }} ~ {{ formatTime(t.endTime) }}</span>
+            </div>
+            <div class="task-item-meta">
+              <span>频率: {{ t.collectInterval }}秒</span>
+              <span v-if="t.metricInfos && t.metricInfos.length > 0" class="task-item-metrics">
+                <span class="text-slate-300 mx-1">|</span>
+                <el-tag
+                  v-for="mi in t.metricInfos.slice(0, 3)"
+                  :key="mi.id"
+                  size="small"
+                  type="info"
+                  class="metric-mini-tag"
+                >
+                  {{ mi.displayName }}
+                </el-tag>
+                <span v-if="t.metricInfos.length > 3" class="more-metrics">+{{ t.metricInfos.length - 3 }}</span>
+              </span>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- 右侧展示区 -->
-    <div class="trend-right">
+      <SampleTaskForm
+        v-model:visible="showTaskDialog"
+        :machines="machines"
+        @submitted="loadTasks"
+      />
+    </aside>
+
+    <!-- ========== 右侧展示区 ========== -->
+    <main class="flex-1 flex flex-col bg-white overflow-hidden">
       <!-- 未选择任务 -->
-      <div v-if="!selectedTask" class="right-placeholder">
+      <div v-if="!selectedTask" class="flex-1 flex flex-col items-center justify-center text-slate-300 gap-3">
         <el-icon :size="48" color="#C0C4CC"><TrendCharts /></el-icon>
-        <p>请在左侧选择或创建一个采样任务以查看波动图</p>
+        <p class="m-0 text-sm">请在左侧选择或创建一个采样任务以查看波动图</p>
       </div>
 
       <!-- WAITING 状态 -->
-      <div v-else-if="selectedTask.status === 'WAITING'" class="right-placeholder">
+      <div v-else-if="selectedTask.status === 'WAITING'" class="flex-1 flex flex-col items-center justify-center text-slate-400 gap-3">
         <el-icon :size="48" color="#E6A23C"><Clock /></el-icon>
-        <p>任务尚未开始，预计于 {{ formatTime(selectedTask.startTime) }} 激活采样...</p>
+        <p class="m-0 text-sm">任务尚未开始，预计于 {{ formatTime(selectedTask.startTime) }} 激活采样...</p>
       </div>
 
       <!-- RUNNING 或 FINISHED 状态 — 动态 ECharts 图 -->
-      <div v-else class="chart-container">
+      <div v-else class="flex-1 flex flex-col p-4 overflow-hidden">
         <div class="chart-legend">
           <span
             v-for="(info, idx) in selectedTask.metricInfos"
@@ -94,14 +103,14 @@
             :type="selectedTask.status === 'RUNNING' ? 'warning' : 'success'"
             size="small"
             effect="dark"
-            style="margin-left: auto"
+            class="ml-auto"
           >
             {{ selectedTask.status === 'RUNNING' ? '🟡 采集中' : '🟢 已结束' }}
           </el-tag>
         </div>
         <div ref="chartRef" class="chart-body" v-loading="chartLoading"></div>
       </div>
-    </div>
+    </main>
   </div>
 </template>
 
@@ -401,109 +410,69 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.monitor-trend {
-  display: flex;
-  height: 100%;
-  gap: 0;
-}
-
-/* 左侧栏 */
-.trend-left {
-  width: 35%;
-  min-width: 320px;
-  max-width: 440px;
-  border-right: 1px solid #e4e7ed;
+/* ========== 任务列表仿 Wiki/Chat 风格 ========== */
+.trend-task-list {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  gap: 1px;
 }
 
-.left-section {
-  padding: 16px;
-}
-
-.left-section + .left-section {
-  border-top: 1px solid #ebeef5;
-}
-
-.task-list-section {
-  flex: 1;
-  overflow: hidden;
+.task-item {
   display: flex;
   flex-direction: column;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.section-header .section-title {
-  margin: 0;
-}
-
-.section-title {
-  margin: 0 0 12px 0;
-  font-size: 15px;
-  font-weight: 600;
-  color: #303133;
-}
-
-.task-table-wrapper {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.task-row {
-  padding: 10px 12px;
-  border-radius: 6px;
+  gap: 2px;
+  padding: 8px 10px;
   cursor: pointer;
-  transition: background 0.15s;
-  margin-bottom: 6px;
-  border: 1px solid transparent;
-}
-.task-row:hover {
-  background: #f5f7fa;
-}
-.task-row.active {
-  background: #ecf5ff;
-  border-color: #409EFF;
+  border-radius: 8px;
+  transition: all 0.18s ease;
 }
 
-.task-row-header {
+.task-item:hover {
+  background-color: rgb(248 250 252);
+}
+
+.task-item.active {
+  background-color: rgb(238 242 255);
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.12);
+}
+
+.task-item.active .task-item-name {
+  color: rgb(79 70 229);
+}
+
+.task-item-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
 }
-.task-name {
+
+.task-item-name {
   font-size: 14px;
   font-weight: 500;
   color: #303133;
+  transition: color 0.18s;
 }
-.task-row-sub {
+
+.task-item-sub {
   display: flex;
   gap: 12px;
-  font-size: 12px;
+  font-size: 11px;
   color: #909399;
 }
-.task-row-meta {
+
+.task-item-meta {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: #C0C4CC;
-  margin-top: 2px;
+  font-size: 11px;
+  color: #c0c4cc;
   flex-wrap: wrap;
 }
 
-.task-row-metrics {
+.task-item-metrics {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #C0C4CC;
 }
 
 .metric-mini-tag {
@@ -516,41 +485,14 @@ onUnmounted(() => {
   color: #909399;
 }
 
-/* 右侧展示区 */
-.trend-right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.right-placeholder {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #C0C4CC;
-  gap: 12px;
-}
-.right-placeholder p {
-  margin: 0;
-  font-size: 14px;
-}
-
-.chart-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 16px;
-}
-
+/* ========== ECharts 图例与图表区 ========== */
 .chart-legend {
   display: flex;
   align-items: center;
   gap: 16px;
   margin-bottom: 8px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .legend-item {

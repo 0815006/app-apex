@@ -1,7 +1,7 @@
 <template>
   <div class="flex h-full w-full bg-slate-50/60 font-sans overflow-hidden">
     <!-- ========== 左侧边栏：目录树 ========== -->
-    <aside class="w-72 bg-white/75 backdrop-blur-md border-r border-slate-200/50 flex flex-col shadow-sm z-10">
+    <aside class="w-80 bg-white/75 backdrop-blur-md border-r border-slate-200/50 flex flex-col shadow-sm z-10">
       <!-- 顶部工具栏 -->
       <div class="p-4 flex justify-between items-center border-b border-slate-100">
         <div class="flex items-center gap-2">
