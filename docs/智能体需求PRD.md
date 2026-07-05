@@ -119,7 +119,7 @@ Step 3: 前端 AgentView 独立页面 + 工作空间管理
 后端（共用升级）：
   ChatController.send() ── 统一入口 → ChatService.sendMessage()
       ├── session_mode = 'CHAT'  → 原逻辑（零改动）
-      └── session_mode = 'AGENT' → while 循环 + ToolExecutor + 中止机制
+      └── session_mode = 'AGENT' → while 循环 + BuiltInToolRegistry + 中止机制
   WorkspaceController ── 新增（空间 CRUD + 文件树）
   AiToolController ────── 新增（工具 CRUD）
 
@@ -161,7 +161,7 @@ agent_workspace 表:
 | **内置工具**（Built-in） | `list_dir` / `locate_files` / `read_file` / `write_file` / `apply_diff` / `execute_command`（共 6 个） | 后端 `BuiltInToolRegistry` 类硬编码产出 Schema + 执行逻辑，Agent 模式激活时自动注入 `LlmRequest.tools`，**不存数据库** | ❌ 用户无需勾选，无需感知，前端不展示 |
 | **外部插件**（Plugin） | 联网搜索、知识库 RAG 等 | 通过 `ai_tool` 表动态管理，用户在 Agent 页面通过勾选框选择启用 | ✅ 用户在聊天框下方可见开关/勾选框 |
 
-> **核心原则**：内置工具是系统级功能，**随 Java 源码一起打包迭代，零配置**，不存入 `ai_tool` 表。外部插件才走数据库配置。详见 3.4。
+> **核心原则**：内置工具是系统级功能，**随 Java 源码一起打包迭代，零配置**，不存入 `ai_tool` 表。外部插件才走数据库配置。详见 3.3。
 
 #### 3.2.2 六大内置工具规格
 
@@ -215,7 +215,7 @@ agent_workspace 表:
 public List<Map<String, Object>> assembleAllTools(String skillId) {
     List<Map<String, Object>> allTools = new ArrayList<>();
 
-    // 1. 强行注入内置工具（读/写/列目录，硬编码，不查数据库）
+    // 1. 强行注入 6 大内置工具（list_dir/locate_files/read_file/write_file/apply_diff/execute_command，硬编码，不查数据库）
     allTools.addAll(builtInToolRegistry.getBuiltInToolsSchema());
 
     // 2. 从 ai_tool 表查询该 Skill 关联的外部插件工具，转换为 LLM Schema 追加
@@ -591,6 +591,16 @@ CREATE TABLE `agent_workspace` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='智能体工作空间表';
 ```
 
+### 4.4.1 升级 `llm_config`
+
+```sql
+ALTER TABLE `llm_config`
+    ADD COLUMN `is_agent_supported` TINYINT(1) NOT NULL DEFAULT 0
+        COMMENT '是否支持 Agent 模式（0=不支持，1=支持）';
+```
+
+> 前端 Agent 页面的模型选择器仅展示 `is_agent_supported = 1` 的模型，避免用户选了不支持 Function Calling 的模型导致 Agent 循环失败。
+
 ### 4.5 变更汇总
 
 | 变更 | 目标 | 说明 |
@@ -600,7 +610,7 @@ CREATE TABLE `agent_workspace` (
 | ALTER | `chat_message` | + `tool_name`, + `tool_call_id`, + `tool_status`, + `tool_calls_json` |
 | ALTER | `llm_config` | + `is_agent_supported` |
 | CREATE | `agent_workspace` | `name` + `dir_name` + `description` |
-| 逻辑启用 | `ai_tool` | MVP 硬编码 → 后续动态 |
+| 逻辑启用 | `ai_tool` | MVP 阶段暂不接入外部插件，Step 4 统一通过 `/tools` 页面动态管理 |
 | 逻辑启用 | `ai_skill_tool_relation` | agent 类型 Skill 绑定工具 |
 
 ---
@@ -657,7 +667,7 @@ executeAgentLoop():
   5. while (loopCount < 5 && !taskCancelled):
      a. HttpClient → LLM API，逐行解析 SSE delta
      b. content → 推送 JSON SSE → 保存 assistant(message) → break
-     c. tool_calls → 累积 → ToolExecutor 执行
+     c. tool_calls → 累积 → BuiltInToolRegistry 执行分发
         → 推送 JSON SSE tool_start/tool_end
         → 保存 assistant(tool_calls) + tool(result)
         → loopCount++ → buildExtendedHistory() → 重建请求（含内置工具）→ continue
@@ -995,12 +1005,12 @@ function handleAgentSSE(response: Response) {
 - [ ] `AgentChat` 组件（CHAT 态）：消息气泡 + 工具步骤卡片 + `<- 返回列表` + 输入框（`@` 联想）+ 停止按钮
 - [ ] SSE JSON 事件分发处理（text/tool_start/tool_end/file_changed）— 对接到 `AgentChat` 组件内
 - [ ] 前端 `src/api/agent.ts`（工作空间 API 函数）
-- [ ] **注意：不展示内置工具勾选框**，read_file/write_file/list_dir 完全由后端自动注入
+- [ ] **注意：不展示内置工具勾选框**，6 大内置工具（list_dir/locate_files/read_file/write_file/apply_diff/execute_command）完全由后端自动注入
 
 ### Step 4：外部插件管理 + Skill 绑定（1 天）
 
 - [ ] 工具管理页（`/tools`）—— **仅管理外部插件**（联网搜索、知识库 RAG），不展示内置工具
-- [ ] `ToolExecutor` 支持将 `ai_tool` 表中的外部插件动态合并到 `builtInTools` 数组后
+- [ ] `AgentChatService.assembleAllTools()` 将 `ai_tool` 表中的外部插件动态合并到内置工具数组后（详见 3.3.1）
 - [ ] SkillManager agent 类型 + 工具绑定 UI（仅绑定外部插件，内置工具由系统无条件注入）
 
 **验证流程**：
@@ -1013,8 +1023,8 @@ function handleAgentSSE(response: Response) {
 5. 输入"在 config/test.yml 写入测试配置" → 大模型自主调用内置 `write_file` → 文件树实时刷新 → 磁盘实际写入 ✅
 6. 点击 `<- 返回列表` → `<transition>` 右推切回 LIST 态 → 会话列表自动刷新（最新会话排第一）✅
 7. 同一会话切回 `/chat` → 该会话不可见（session_mode 隔离）✅
-9. 前端任意位置搜索不到任何内置工具勾选框 → 6 大工具完全由后端隐式注入 ✅
-10. 输入"帮我跑一下这个项目的构建命令看看有没有报错" → 大模型先通过 `list_dir` 判断项目类型（pom.xml → `mvn compile`，package.json → `npm run build`，go.mod → `go build ./...`），然后自动调用 `execute_command` 执行 → 根据 stdout/stderr 自主判断结果 → 若有报错大模型自主调用 `apply_diff` 修复后重新构建 → 自愈闭环 ✅
+8. 前端任意位置搜索不到任何内置工具勾选框 → 6 大工具完全由后端隐式注入 ✅
+9. 输入"帮我跑一下这个项目的构建命令看看有没有报错" → 大模型先通过 `list_dir` 判断项目类型（pom.xml → `mvn compile`，package.json → `npm run build`，go.mod → `go build ./...`），然后自动调用 `execute_command` 执行 → 根据 stdout/stderr 自主判断结果 → 若有报错大模型自主调用 `apply_diff` 修复后重新构建 → 自愈闭环 ✅
 
 ---
 
@@ -1065,7 +1075,7 @@ function handleAgentSSE(response: Response) {
 
 ## 九、下阶段里程碑（v5.0 生产级增强）
 
-当前 v4.4 方案已覆盖核心闭环（前端双栏状态机 + 6 大内置工具 + 后端执行分流 + SSE JSON 事件），可直接进入 MVP 编码。以下 5 项是推向生产环境前必须考虑的"终极拼图"，建议在 Step 4 结束后按优先级迭代。
+当前 v4.5 方案已覆盖核心闭环（前端双栏状态机 + 6 大内置工具 + 后端执行分流 + SSE JSON 事件），可直接进入 MVP 编码。以下 5 项是推向生产环境前必须考虑的"终极拼图"，建议在 Step 4 结束后按优先级迭代。
 
 ### 9.1 Agent System Prompt 框架（Agent 的心脏）
 
