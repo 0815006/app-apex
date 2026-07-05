@@ -1,7 +1,7 @@
 <template>
-  <div class="flex h-full w-full bg-slate-50/60 font-sans overflow-hidden">
+  <div class="flex h-full w-full bg-slate-50/60 font-sans overflow-hidden" :class="{ 'select-none': isResizing }">
     <!-- ========== 左侧栏：采样任务列表 ========== -->
-    <aside class="w-80 bg-white/75 backdrop-blur-md border-r border-slate-200/50 flex flex-col shadow-sm z-10">
+    <aside :style="{ width: sidebarWidth + 'px', minWidth: sidebarWidth + 'px' }" class="bg-white/75 backdrop-blur-md border-r border-slate-200/50 flex flex-col shadow-sm z-10 shrink-0">
       <!-- 顶部工具栏 -->
       <div class="p-4 flex justify-between items-center border-b border-slate-100">
         <div class="flex items-center gap-2">
@@ -74,6 +74,14 @@
       />
     </aside>
 
+    <!-- ========== 可拖拽分隔线 ========== -->
+    <div
+      class="resize-divider"
+      @mousedown="onDragStart"
+    >
+      <div class="resize-divider-line" />
+    </div>
+
     <!-- ========== 右侧展示区 ========== -->
     <main class="flex-1 flex flex-col bg-white overflow-hidden">
       <!-- 未选择任务 -->
@@ -115,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onMounted, onUnmounted, onBeforeUnmount, nextTick } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import type { MonitorMachine, SampleTask, HistoryPoint } from '@/types/monitor'
 import { getMachineList, getSampleTaskList, getTaskHistory, getTaskHistoryLatest } from '@/api/monitor'
@@ -140,6 +148,48 @@ echarts.use([
   DataZoomComponent,
   CanvasRenderer,
 ])
+
+// ============ 分隔线拖拽 ============
+const SIDEBAR_WIDTH_KEY = 'apex_trend_sidebar_width'
+
+function loadSidebarWidth(): number {
+  const stored = localStorage.getItem(SIDEBAR_WIDTH_KEY)
+  if (stored) {
+    const parsed = parseInt(stored, 10)
+    if (!isNaN(parsed) && parsed >= 200 && parsed <= 600) return parsed
+  }
+  return 320
+}
+
+const sidebarWidth = ref(loadSidebarWidth())
+const isResizing = ref(false)
+let dragStartX = 0
+let dragStartWidth = 0
+
+function onDragStart(e: MouseEvent) {
+  e.preventDefault()
+  isResizing.value = true
+  dragStartX = e.clientX
+  dragStartWidth = sidebarWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.addEventListener('mousemove', onDragMove)
+  document.addEventListener('mouseup', onDragEnd)
+}
+
+function onDragMove(e: MouseEvent) {
+  if (!isResizing.value) return
+  const dx = e.clientX - dragStartX
+  sidebarWidth.value = Math.min(600, Math.max(200, dragStartWidth + dx))
+}
+
+function onDragEnd() {
+  if (!isResizing.value) return
+  isResizing.value = false
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
+  document.body.style.cursor = ''
+  localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth.value))
+}
 
 // ============ 动态调色板 ============
 const COLOR_PALETTE = [
@@ -407,6 +457,12 @@ onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   chartInstance?.dispose()
 })
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
+  document.body.style.cursor = ''
+})
 </script>
 
 <style scoped>
@@ -512,5 +568,34 @@ onUnmounted(() => {
 .chart-body {
   flex: 1;
   min-height: 0;
+}
+/* ========== 可拖拽分隔线 ========== */
+.resize-divider {
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  background-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  transition: background-color 0.15s;
+}
+.resize-divider:hover {
+  background-color: rgba(59, 130, 246, 0.06);
+}
+.resize-divider-line {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background-color: transparent;
+  transition: background-color 0.2s;
+  pointer-events: none;
+}
+.resize-divider:hover .resize-divider-line,
+.resize-divider:active .resize-divider-line {
+  background-color: #3b82f6;
 }
 </style>

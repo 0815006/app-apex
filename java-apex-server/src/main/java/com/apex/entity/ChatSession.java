@@ -27,6 +27,12 @@ public class ChatSession {
     /** 绑定的 LLM 配置 ID */
     private String configId;
 
+    /** 会话模式：CHAT（纯对话）/ AGENT（智能体） */
+    private String sessionMode;
+
+    /** 关联的工作空间 ID（AGENT 模式时必选） */
+    private String workspaceId;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

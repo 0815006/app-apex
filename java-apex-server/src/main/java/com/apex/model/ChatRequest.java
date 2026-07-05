@@ -7,5 +7,6 @@ public record ChatRequest(
         String sessionId,
         String configId,
         String content,
-        String skillId
+        String skillId,
+        String workspaceId
 ) {}

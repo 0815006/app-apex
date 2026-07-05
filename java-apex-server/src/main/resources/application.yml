@@ -50,3 +50,6 @@ apex:
   monitor:
     scheduler:
       enabled: true
+  agent:
+    workspace:
+      root-dir: ${AGENT_WORKSPACE_ROOT:D:\agent-workspaces}

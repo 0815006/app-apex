@@ -31,9 +31,9 @@ public class ChatController {
      * 获取当前用户的会话列表。
      */
     @GetMapping("/sessions")
-    public Result<List<ChatSessionVO>> listSessions() {
-        log.info("[{}] 查询会话列表", EmpContext.getEmpNo());
-        return Result.success(chatService.listSessions());
+    public Result<List<ChatSessionVO>> listSessions(@RequestParam(required = false) String mode) {
+        log.info("[{}] 查询会话列表: mode={}", EmpContext.getEmpNo(), mode);
+        return Result.success(chatService.listSessions(mode));
     }
 
     /**
@@ -51,12 +51,15 @@ public class ChatController {
      */
     @PostMapping(value = "/send", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter sendMessage(@RequestBody ChatRequest request, HttpServletResponse response) {
+        String contentPreview = request.content() != null
+                ? request.content().substring(0, Math.min(request.content().length(), 30))
+                : "null";
         log.info("[{}] 发送消息: sessionId={}, configId={}, skillId={}, content={}",
                 EmpContext.getEmpNo(),
                 request.sessionId(),
                 request.configId(),
                 request.skillId(),
-                request.content().substring(0, Math.min(request.content().length(), 30)));
+                contentPreview);
         // 防止反向代理缓冲 SSE 流
         response.setHeader("X-Accel-Buffering", "no");
         response.setHeader("Cache-Control", "no-cache, no-transform");
@@ -64,7 +67,8 @@ public class ChatController {
                 request.sessionId(),
                 request.configId(),
                 request.content(),
-                request.skillId()
+                request.skillId(),
+                request.workspaceId()
         );
     }
 
@@ -86,6 +90,16 @@ public class ChatController {
         String title = body.get("title");
         log.info("[{}] 更新会话标题: sessionId={}, title={}", EmpContext.getEmpNo(), sessionId, title);
         chatService.updateTitle(sessionId, title);
+        return Result.success();
+    }
+
+    /**
+     * 中断正在执行的 Agent 会话。
+     */
+    @PostMapping("/abort/{sessionId}")
+    public Result<Void> abortAgent(@PathVariable String sessionId) {
+        log.info("[{}] 中断 Agent 会话: sessionId={}", EmpContext.getEmpNo(), sessionId);
+        chatService.abortAgent(sessionId);
         return Result.success();
     }
 }

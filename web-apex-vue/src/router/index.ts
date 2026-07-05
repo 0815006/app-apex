@@ -49,6 +49,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/MonitorTrend.vue'),
         meta: { title: '监控走势' },
       },
+      {
+        path: 'agent',
+        name: 'Agent',
+        component: () => import('@/views/AgentView.vue'),
+        meta: { title: 'Agent' },
+      },
     ],
   },
   {

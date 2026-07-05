@@ -10,6 +10,7 @@ public record ChatSessionVO(
         String title,
         String configName,
         String modelName,
+        String sessionMode,
         LocalDateTime createTime,
         LocalDateTime updateTime
 ) {}

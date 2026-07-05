@@ -33,6 +33,9 @@ public class LlmConfig {
     /** 模型名称（如 gpt-4o） */
     private String modelName;
 
+    /** 是否支持 Agent 模式（0=不支持，1=支持） */
+    private Integer isAgentSupported;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;

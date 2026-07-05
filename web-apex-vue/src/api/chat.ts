@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { LlmConfigVO, LlmConfig, ChatSessionVO, ChatMessage } from '@/types/chat'
+import type { LlmConfigVO, LlmConfig, ChatSessionVO, ChatMessage, AgentSSEEvent, AgentDonePayload, AgentCallbacks } from '@/types/chat'
 
 /**
  * LLM 配置 API
@@ -34,9 +34,10 @@ export function deleteLlmConfig(id: string): Promise<{ code: number; message: st
  * 聊天 API
  */
 
-/** 获取会话列表 */
-export function listSessions(): Promise<{ code: number; message: string; data: ChatSessionVO[] }> {
-  return request.get('/chat/sessions')
+/** 获取会话列表（可按 mode 过滤） */
+export function listSessions(mode?: string): Promise<{ code: number; message: string; data: ChatSessionVO[] }> {
+  const params = mode ? { mode } : {}
+  return request.get('/chat/sessions', { params })
 }
 
 /** 获取会话消息历史 */
@@ -54,9 +55,14 @@ export function updateSessionTitle(sessionId: string, title: string): Promise<{ 
   return request.put(`/chat/session/${sessionId}/title`, { title })
 }
 
+/** 中断 Agent 会话 */
+export function abortAgent(sessionId: string): Promise<{ code: number; message: string; data: null }> {
+  return request.post(`/chat/abort/${sessionId}`)
+}
+
 /**
  * 发送消息（SSE 流式）。
- * 不使用 axios，直接用 fetch + ReadableStream 解析 SSE。
+ * 兼容经典 Chat 模式和 Agent 模式。
  */
 export function sendChatMessage(
   sessionId: string | null,
@@ -66,7 +72,8 @@ export function sendChatMessage(
   onDone: (data: { sessionId: string; messageId: string }) => void,
   onError: (error: string) => void,
   onReasoning?: (chunk: string) => void,
-  skillId?: string | null
+  skillId?: string | null,
+  workspaceId?: string | null
 ): AbortController {
   const controller = new AbortController()
 
@@ -76,7 +83,6 @@ export function sendChatMessage(
     'X-Emp-No': localStorage.getItem('apex_current_emp_no') || '0000000',
   }
 
-  // 流读取超时（60 秒无数据则自动断开）
   let streamTimeout: ReturnType<typeof setTimeout> | null = null
   const READ_TIMEOUT_MS = 60_000
 
@@ -98,7 +104,7 @@ export function sendChatMessage(
   fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ sessionId, configId, content, skillId: skillId || null }),
+    body: JSON.stringify({ sessionId, configId, content, skillId: skillId || null, workspaceId: workspaceId || null }),
     signal: controller.signal,
   }).then(async (response) => {
     if (!response.ok) {
@@ -114,17 +120,15 @@ export function sendChatMessage(
     let buffer = ''
     resetTimeout()
 
-    // SSE 逐行解析状态机
     let currentEvent = ''
     let currentData = ''
     let hasData = false
-    let eventStarted = false // 是否已经开始收到过有效 SSE 事件
+    let eventStarted = false
 
     function parseField(line: string): { field: string; value: string } | null {
       const colonIdx = line.indexOf(':')
       if (colonIdx === -1) return null
       const field = line.substring(0, colonIdx)
-      // SSE spec: 冒号后可选一个空格，跳过之
       let value = line.substring(colonIdx + 1)
       if (value.startsWith(' ')) value = value.substring(1)
       return { field, value }
@@ -160,7 +164,6 @@ export function sendChatMessage(
         const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
 
         if (line === '') {
-          // 空行 = SSE 消息边界
           if (currentEvent && hasData) {
             dispatchEvent(currentEvent, currentData)
             eventStarted = true
@@ -169,7 +172,6 @@ export function sendChatMessage(
           currentData = ''
           hasData = false
         } else if (line.startsWith(':')) {
-          // SSE comment，忽略
           continue
         } else {
           const parsed = parseField(line)
@@ -182,19 +184,16 @@ export function sendChatMessage(
               hasData = true
               currentData += (currentData ? '\n' : '') + parsed.value
             }
-            // id:, retry: 等其他 SSE 字段忽略
           }
         }
       }
     }
 
-    // 流结束后处理缓冲中残留的最后一条消息
     if (currentEvent && hasData) {
       dispatchEvent(currentEvent, currentData)
       eventStarted = true
     }
 
-    // 如果流结束但从未收到任何有效 SSE 事件，视为错误
     if (!eventStarted) {
       onError('服务器未返回有效响应，请检查模型配置或稍后重试')
     }
@@ -203,6 +202,185 @@ export function sendChatMessage(
     stopTimeout()
     if (err.name !== 'AbortError') {
       onError(err.message || '网络异常')
+    }
+  })
+
+  return controller
+}
+
+/**
+ * 发送 Agent 消息（SSE 流式，支持 Agent 专属事件）。
+ * 后端通过 event:agent + data:json 发送所有 Agent 事件。
+ */
+export function sendAgentMessage(
+  sessionId: string | null,
+  configId: string,
+  content: string,
+  callbacks: AgentCallbacks,
+  skillId?: string | null,
+  workspaceId?: string | null
+): AbortController {
+  const controller = new AbortController()
+
+  const url = '/api/chat/send'
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'X-Emp-No': localStorage.getItem('apex_current_emp_no') || '0000000',
+  }
+
+  let streamTimeout: ReturnType<typeof setTimeout> | null = null
+  // Agent 可执行多轮，超时设长一些（5 分钟无数据则断开）
+  const READ_TIMEOUT_MS = 300_000
+
+  function resetTimeout() {
+    if (streamTimeout) clearTimeout(streamTimeout)
+    streamTimeout = setTimeout(() => {
+      controller.abort()
+      callbacks.onError('Agent 响应超时，长时间未收到数据')
+    }, READ_TIMEOUT_MS)
+  }
+
+  function stopTimeout() {
+    if (streamTimeout) {
+      clearTimeout(streamTimeout)
+      streamTimeout = null
+    }
+  }
+
+  fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ sessionId, configId, content, skillId: skillId || null, workspaceId: workspaceId || null }),
+    signal: controller.signal,
+  }).then(async (response) => {
+    if (!response.ok) {
+      callbacks.onError(`HTTP ${response.status}: ${response.statusText}`)
+      return
+    }
+    const reader = response.body?.getReader()
+    if (!reader) {
+      callbacks.onError('无法读取响应流')
+      return
+    }
+    const decoder = new TextDecoder()
+    let buffer = ''
+    resetTimeout()
+
+    let currentEvent = ''
+    let currentData = ''
+    let hasData = false
+    let eventStarted = false
+
+    function parseField(line: string): { field: string; value: string } | null {
+      const colonIdx = line.indexOf(':')
+      if (colonIdx === -1) return null
+      const field = line.substring(0, colonIdx)
+      let value = line.substring(colonIdx + 1)
+      if (value.startsWith(' ')) value = value.substring(1)
+      return { field, value }
+    }
+
+    function dispatchAgentEvent(data: string) {
+      try {
+        const event: AgentSSEEvent = JSON.parse(data)
+        switch (event.type) {
+          case 'text':
+            callbacks.onText(event.content || '')
+            break
+          case 'reasoning':
+            callbacks.onReasoning(event.reasoning || '')
+            break
+          case 'tool_start':
+            callbacks.onToolStart(event.toolName || '', event.toolCallId || '')
+            break
+          case 'tool_end':
+            callbacks.onToolEnd(
+              event.toolName || '',
+              event.toolCallId || '',
+              event.status || 'success',
+              event.result
+            )
+            break
+          case 'file_changed':
+            callbacks.onFileChanged(event.path || '', event.tool || '')
+            break
+          case 'done':
+            callbacks.onDone({
+              sessionId: event.sessionId || '',
+              messageId: event.messageId || '',
+            })
+            break
+          case 'error':
+            callbacks.onError(event.error || '未知错误')
+            break
+        }
+      } catch {
+        // 非 JSON 数据，忽略（可能是心跳注释）
+      }
+    }
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      resetTimeout()
+      buffer += decoder.decode(value, { stream: true })
+
+      const parts = buffer.split('\n')
+      buffer = parts.pop() || ''
+
+      for (const rawLine of parts) {
+        const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+
+        if (line === '') {
+          if (currentEvent && hasData) {
+            if (currentEvent === 'agent') {
+              dispatchAgentEvent(currentData)
+            } else if (currentEvent === 'message') {
+              // 兼容：经典 chat 模式下也走 agent view
+              callbacks.onText(currentData)
+            } else if (currentEvent === 'reasoning') {
+              callbacks.onReasoning(currentData)
+            } else if (currentEvent === 'error') {
+              callbacks.onError(currentData)
+            }
+            eventStarted = true
+          }
+          currentEvent = ''
+          currentData = ''
+          hasData = false
+        } else if (line.startsWith(':')) {
+          continue
+        } else {
+          const parsed = parseField(line)
+          if (parsed) {
+            if (parsed.field === 'event') {
+              currentEvent = parsed.value
+              currentData = ''
+              hasData = false
+            } else if (parsed.field === 'data') {
+              hasData = true
+              currentData += (currentData ? '\n' : '') + parsed.value
+            }
+          }
+        }
+      }
+    }
+
+    if (currentEvent && hasData) {
+      if (currentEvent === 'agent') {
+        dispatchAgentEvent(currentData)
+      }
+      eventStarted = true
+    }
+
+    if (!eventStarted) {
+      callbacks.onError('服务器未返回有效响应，请检查模型配置或稍后重试')
+    }
+    stopTimeout()
+  }).catch((err) => {
+    stopTimeout()
+    if (err.name !== 'AbortError') {
+      callbacks.onError(err.message || '网络异常')
     }
   })
 
