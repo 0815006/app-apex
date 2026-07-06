@@ -256,14 +256,34 @@
         <div class="input-container">
           <div class="input-wrapper">
             <el-input
+              ref="textareaRef"
               v-model="inputContent"
               type="textarea"
               :rows="2"
               placeholder="描述你要完成的任务，Agent 将自动规划执行…"
               resize="none"
               :disabled="!selectedConfigId || sending"
-              @keydown.enter.exact="handleSend"
+              @input="onInputChange"
+              @keydown="handleInputKeydown"
+              @blur="onTextareaBlur"
             />
+            <!-- @ 文件提及弹出面板 -->
+            <div v-if="showMention && filteredMentionFiles.length > 0" class="mention-popup">
+              <div
+                v-for="(file, idx) in filteredMentionFiles"
+                :key="file.path"
+                :class="['mention-item', { active: idx === mentionActiveIdx }]"
+                @mousedown.prevent="selectMentionFile(file)"
+                @mouseenter="mentionActiveIdx = idx"
+              >
+                <span class="mention-icon">📄</span>
+                <span class="mention-name">{{ file.name }}</span>
+                <span class="mention-path">{{ file.path }}</span>
+              </div>
+            </div>
+            <div v-if="showMention && filteredMentionFiles.length === 0" class="mention-popup mention-empty">
+              <div class="mention-item-empty">无匹配文件</div>
+            </div>
           </div>
           <div class="input-toolbar">
             <span v-if="streaming" class="streaming-hint">
@@ -616,7 +636,14 @@ async function loadConfigs() {
 // ========== 消息相关 ==========
 const messages = ref<ChatMessage[]>([])
 const inputContent = ref('')
+const textareaRef = ref<{ focus: () => void } | null>(null)
 const sending = ref(false)
+
+// ========== @mention 文件提及 ==========
+const showMention = ref(false)
+const mentionFilter = ref('')
+const mentionAnchorPos = ref(-1)
+const mentionActiveIdx = ref(0)
 const streaming = ref(false)
 const streamingContent = ref('')
 const streamingReasoning = ref('')
@@ -648,6 +675,111 @@ function scrollToBottom() {
   nextTick(() => {
     scrollAnchor.value?.scrollIntoView({ behavior: 'smooth' })
   })
+}
+
+// ========== @mention 文件提及逻辑 ==========
+function flattenFileTree(nodes: WorkspaceFileNode[]): { name: string; path: string }[] {
+  const result: { name: string; path: string }[] = []
+  function walk(node: WorkspaceFileNode) {
+    if (node.type === 'file') {
+      result.push({ name: node.name, path: node.path })
+    }
+    if (node.children) {
+      node.children.forEach(walk)
+    }
+  }
+  nodes.forEach(walk)
+  return result
+}
+
+const flatMentionFiles = computed(() => flattenFileTree(fileTree.value))
+
+const filteredMentionFiles = computed(() => {
+  if (!mentionFilter.value) return flatMentionFiles.value
+  const filter = mentionFilter.value.toLowerCase()
+  return flatMentionFiles.value.filter(f =>
+    f.path.toLowerCase().includes(filter) || f.name.toLowerCase().includes(filter),
+  )
+})
+
+function findLastMentionAt(text: string): number {
+  for (let i = text.length - 1; i >= 0; i--) {
+    if (text[i] === '@') {
+      if (i === 0 || /\s/.test(text[i - 1])) {
+        // 如果 @ 之后的内容已经包含空格，说明该 mention 已经被提交闭合（如 @path/to/file ），
+        // 跳过继续向前查找更早的 @，避免误触发已完成的文件引用
+        const afterAt = text.substring(i + 1)
+        if (afterAt.includes(' ')) {
+          continue
+        }
+        return i
+      }
+    }
+  }
+  return -1
+}
+
+function onInputChange() {
+  if (!selectedWorkspaceId.value) return
+  const val = inputContent.value
+  const atIdx = findLastMentionAt(val)
+  if (atIdx >= 0) {
+    mentionAnchorPos.value = atIdx
+    mentionFilter.value = val.substring(atIdx + 1)
+    mentionActiveIdx.value = 0
+    showMention.value = true
+  } else {
+    showMention.value = false
+  }
+}
+
+function selectMentionFile(file: { name: string; path: string }) {
+  if (mentionAnchorPos.value < 0) return
+  const before = inputContent.value.substring(0, mentionAnchorPos.value)
+  const after = inputContent.value.substring(mentionAnchorPos.value + 1 + mentionFilter.value.length)
+  inputContent.value = before + '@' + file.path + ' ' + after
+  showMention.value = false
+  // 重新聚焦到输入框
+  nextTick(() => {
+    textareaRef.value?.focus()
+  })
+}
+
+function onTextareaBlur() {
+  setTimeout(() => {
+    showMention.value = false
+  }, 200)
+}
+
+function handleInputKeydown(e: KeyboardEvent) {
+  // 当 mention 面板打开时，优先处理导航键
+  if (showMention.value && filteredMentionFiles.value.length > 0) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      mentionActiveIdx.value = Math.min(mentionActiveIdx.value + 1, filteredMentionFiles.value.length - 1)
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      mentionActiveIdx.value = Math.max(mentionActiveIdx.value - 1, 0)
+      return
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      selectMentionFile(filteredMentionFiles.value[mentionActiveIdx.value])
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      showMention.value = false
+      return
+    }
+  }
+  // 否则正常发送
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    handleSend()
+  }
 }
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -1317,7 +1449,68 @@ watch(selectedWorkspaceId, (newWsId) => {
   padding: 14px 20px;
 }
 .input-wrapper {
+  position: relative;
   margin-bottom: 10px;
+}
+
+/* ========== @ 文件提及弹出面板 ========== */
+.mention-popup {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 210px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 200;
+  padding: 4px 0;
+}
+.mention-popup.mention-empty {
+  max-height: unset;
+}
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  font-size: 13px;
+}
+.mention-item:hover,
+.mention-item.active {
+  background-color: #eef2ff;
+}
+.mention-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+.mention-name {
+  font-weight: 500;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  max-width: 160px;
+}
+.mention-path {
+  color: #94a3b8;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.mention-item-empty {
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #94a3b8;
+  text-align: center;
 }
 .input-wrapper :deep(.el-textarea__inner) {
   border-radius: 14px;
