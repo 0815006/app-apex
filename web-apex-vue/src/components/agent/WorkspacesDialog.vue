@@ -387,7 +387,8 @@ function avatarColor(name: string): string {
   return palette[Math.abs(hash) % palette.length]
 }
 
-async function handleDelete(id: string) {
+async function handleDelete(id?: string) {
+  if (!id) return
   try {
     const res = await deleteWorkspace(id)
     if (res.code === 200) {
@@ -398,7 +399,7 @@ async function handleDelete(id: string) {
   } catch { /* 拦截器已处理 */ }
 }
 
-function formatTime(dateStr: string): string {
+function formatTime(dateStr?: string): string {
   if (!dateStr) return ''
   const d = new Date(dateStr)
   const y = d.getFullYear()
