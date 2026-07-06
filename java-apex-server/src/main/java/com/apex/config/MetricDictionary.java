@@ -154,6 +154,20 @@ public final class MetricDictionary {
         PREFIX_RULES.put("mysql_global_status_innodb_redo_log_",MetricCategory.INNODB);
         PREFIX_RULES.put("mysql_global_status_innodb_num_open_files",MetricCategory.INNODB);
         PREFIX_RULES.put("mysql_global_status_innodb_",         MetricCategory.INNODB);
+        // MySQL Buffer Pool 8.0+ (无 innodb_ 前缀)
+        PREFIX_RULES.put("mysql_global_status_buffer_pool_",    MetricCategory.INNODB);
+        // MySQL TC Log (InnoDB 事务协调器)
+        PREFIX_RULES.put("mysql_global_status_tc_log_",         MetricCategory.INNODB);
+        // MySQL X Protocol 状态
+        PREFIX_RULES.put("mysql_global_status_mysqlx_",         MetricCategory.NETWORK);
+        // MySQL SSL
+        PREFIX_RULES.put("mysql_global_status_ssl_",            MetricCategory.CONNECTION);
+        // MySQL Binlog 状态
+        PREFIX_RULES.put("mysql_global_status_binlog_",         MetricCategory.QUERY);
+        // MySQL Key 缓存 (MyISAM)
+        PREFIX_RULES.put("mysql_global_status_key_",            MetricCategory.TABLE_OP);
+        // MySQL 事务隔离级别
+        PREFIX_RULES.put("mysql_transaction_isolation",         MetricCategory.CONFIG);
         // MySQL 状态兜底 (放在 innodb 具体规则之后)
         PREFIX_RULES.put("mysql_global_status_",                 MetricCategory.OTHER);
         // MySQL 配置变量
@@ -1332,6 +1346,168 @@ public final class MetricDictionary {
         entry(list, "mysql_global_variables_innodb_use_native_aio",                     "InnoDB使用原生AIO");
         entry(list, "mysql_global_variables_innodb_validate_tablespace_paths",          "InnoDB验证表空间路径");
         entry(list, "mysql_global_variables_innodb_write_io_threads",                   "InnoDB 写IO线程数");
+
+        // ========== MySQL 状态 (ACL / Binlog / Buffer Pool 8.0+) ==========
+        entry(list, "mysql_global_status_acl_cache_items_count",                         "ACL缓存条目数");
+        entry(list, "mysql_global_status_binlog_cache_disk_use",                         "Binlog缓存磁盘使用次数");
+        entry(list, "mysql_global_status_binlog_cache_use",                              "Binlog缓存使用次数");
+        entry(list, "mysql_global_status_binlog_stmt_cache_disk_use",                    "Binlog语句缓存磁盘使用次数");
+        entry(list, "mysql_global_status_binlog_stmt_cache_use",                         "Binlog语句缓存使用次数");
+        entry(list, "mysql_global_status_buffer_pool_dirty_pages",                       "缓冲池脏页数(8.0+ 全局)");
+        entry(list, "mysql_global_status_buffer_pool_page_changes_total",                "缓冲池页变更总数");
+        entry(list, "mysql_global_status_buffer_pool_pages",                             "缓冲池页数(8.0+ 全局)");
+
+        // ========== MySQL 状态 (延迟插入 / 错误日志 / Flush) ==========
+        entry(list, "mysql_global_status_delayed_errors",                                "延迟插入错误数");
+        entry(list, "mysql_global_status_delayed_insert_threads",                        "延迟插入线程数");
+        entry(list, "mysql_global_status_delayed_writes",                                "延迟写入次数");
+        entry(list, "mysql_global_status_deprecated_use_i_s_processlist_count",          "已废弃IS进程列表使用次数");
+        entry(list, "mysql_global_status_deprecated_use_i_s_processlist_last_timestamp", "已废弃IS进程列表最后使用时间戳");
+        entry(list, "mysql_global_status_error_log_buffered_bytes",                      "错误日志缓冲字节");
+        entry(list, "mysql_global_status_error_log_buffered_events",                     "错误日志缓冲事件数");
+        entry(list, "mysql_global_status_error_log_expired_events",                      "错误日志过期事件数");
+        entry(list, "mysql_global_status_error_log_latest_write",                        "错误日志最近写入时间戳");
+        entry(list, "mysql_global_status_flush_commands",                                "FLUSH命令次数");
+        entry(list, "mysql_global_status_global_connection_memory",                      "全局连接内存");
+        entry(list, "mysql_global_status_handlers_total",                                "处理器操作总数(8.0+)");
+
+        // ========== MySQL 状态 (Key 缓存 / MyISAM) ==========
+        entry(list, "mysql_global_status_key_blocks_not_flushed",                        "键缓存未刷新块数");
+        entry(list, "mysql_global_status_key_blocks_unused",                             "键缓存未使用块数");
+        entry(list, "mysql_global_status_key_blocks_used",                               "键缓存已使用块数");
+        entry(list, "mysql_global_status_key_read_requests",                             "键缓存读请求次数");
+        entry(list, "mysql_global_status_key_reads",                                     "键缓存物理读次数");
+        entry(list, "mysql_global_status_key_write_requests",                            "键缓存写请求次数");
+        entry(list, "mysql_global_status_key_writes",                                    "键缓存物理写次数");
+        entry(list, "mysql_global_status_locked_connects",                               "锁定连接数");
+        entry(list, "mysql_global_status_max_execution_time_exceeded",                   "超最大执行时间次数");
+        entry(list, "mysql_global_status_max_execution_time_set",                        "设置最大执行时间次数");
+        entry(list, "mysql_global_status_max_execution_time_set_failed",                 "设置最大执行时间失败次数");
+
+        // ========== MySQL 状态 (X Protocol 连接/传输) ==========
+        entry(list, "mysql_global_status_mysqlx_aborted_clients",                        "X协议客户端异常断开");
+        entry(list, "mysql_global_status_mysqlx_bytes_received",                         "X协议接收字节数");
+        entry(list, "mysql_global_status_mysqlx_bytes_received_compressed_payload",      "X协议接收压缩载荷字节");
+        entry(list, "mysql_global_status_mysqlx_bytes_received_uncompressed_frame",      "X协议接收解压帧字节");
+        entry(list, "mysql_global_status_mysqlx_bytes_sent",                             "X协议发送字节数");
+        entry(list, "mysql_global_status_mysqlx_bytes_sent_compressed_payload",          "X协议发送压缩载荷字节");
+        entry(list, "mysql_global_status_mysqlx_bytes_sent_uncompressed_frame",          "X协议发送解压帧字节");
+        entry(list, "mysql_global_status_mysqlx_connection_accept_errors",               "X协议接受连接错误数");
+        entry(list, "mysql_global_status_mysqlx_connection_errors",                      "X协议连接错误数");
+        entry(list, "mysql_global_status_mysqlx_connections_accepted",                   "X协议接受连接数");
+        entry(list, "mysql_global_status_mysqlx_connections_closed",                     "X协议关闭连接数");
+        entry(list, "mysql_global_status_mysqlx_connections_rejected",                   "X协议拒绝连接数");
+
+        // ========== MySQL 状态 (X Protocol CRUD / 游标) ==========
+        entry(list, "mysql_global_status_mysqlx_crud_create_view",                       "X协议CRUD创建视图");
+        entry(list, "mysql_global_status_mysqlx_crud_delete",                            "X协议CRUD删除");
+        entry(list, "mysql_global_status_mysqlx_crud_drop_view",                         "X协议CRUD删除视图");
+        entry(list, "mysql_global_status_mysqlx_crud_find",                              "X协议CRUD查找");
+        entry(list, "mysql_global_status_mysqlx_crud_insert",                            "X协议CRUD插入");
+        entry(list, "mysql_global_status_mysqlx_crud_modify_view",                       "X协议CRUD修改视图");
+        entry(list, "mysql_global_status_mysqlx_crud_update",                            "X协议CRUD更新");
+        entry(list, "mysql_global_status_mysqlx_cursor_close",                           "X协议游标关闭");
+        entry(list, "mysql_global_status_mysqlx_cursor_fetch",                           "X协议游标提取");
+        entry(list, "mysql_global_status_mysqlx_cursor_open",                            "X协议游标打开");
+        entry(list, "mysql_global_status_mysqlx_errors_sent",                            "X协议发送错误数");
+        entry(list, "mysql_global_status_mysqlx_errors_unknown_message_type",            "X协议未知消息类型错误数");
+        entry(list, "mysql_global_status_mysqlx_expect_close",                           "X协议期望关闭");
+        entry(list, "mysql_global_status_mysqlx_expect_open",                            "X协议期望打开");
+        entry(list, "mysql_global_status_mysqlx_init_error",                             "X协议初始化错误");
+        entry(list, "mysql_global_status_mysqlx_messages_sent",                          "X协议发送消息数");
+
+        // ========== MySQL 状态 (X Protocol 通知 / 预处理 / 会话 / SSL) ==========
+        entry(list, "mysql_global_status_mysqlx_notice_global_sent",                     "X协议全局通知发送数");
+        entry(list, "mysql_global_status_mysqlx_notice_other_sent",                      "X协议其他通知发送数");
+        entry(list, "mysql_global_status_mysqlx_notice_warning_sent",                    "X协议警告通知发送数");
+        entry(list, "mysql_global_status_mysqlx_notified_by_group_replication",          "X协议组复制通知数");
+        entry(list, "mysql_global_status_mysqlx_port",                                   "X协议端口");
+        entry(list, "mysql_global_status_mysqlx_prep_deallocate",                        "X协议预处理释放");
+        entry(list, "mysql_global_status_mysqlx_prep_execute",                           "X协议预处理执行");
+        entry(list, "mysql_global_status_mysqlx_prep_prepare",                           "X协议预处理准备");
+        entry(list, "mysql_global_status_mysqlx_rows_sent",                              "X协议发送行数");
+        entry(list, "mysql_global_status_mysqlx_sessions",                               "X协议会话数");
+        entry(list, "mysql_global_status_mysqlx_sessions_accepted",                      "X协议接受会话数");
+        entry(list, "mysql_global_status_mysqlx_sessions_closed",                        "X协议关闭会话数");
+        entry(list, "mysql_global_status_mysqlx_sessions_fatal_error",                   "X协议会话致命错误数");
+        entry(list, "mysql_global_status_mysqlx_sessions_killed",                        "X协议会话杀死数");
+        entry(list, "mysql_global_status_mysqlx_sessions_rejected",                      "X协议拒绝会话数");
+        entry(list, "mysql_global_status_mysqlx_ssl_accepts",                            "X协议SSL接受数");
+        entry(list, "mysql_global_status_mysqlx_ssl_ctx_verify_depth",                   "X协议SSL上下文验证深度");
+        entry(list, "mysql_global_status_mysqlx_ssl_ctx_verify_mode",                    "X协议SSL上下文验证模式");
+        entry(list, "mysql_global_status_mysqlx_ssl_finished_accepts",                   "X协议SSL完成接受数");
+        entry(list, "mysql_global_status_mysqlx_ssl_server_not_after",                   "X协议SSL证书到期时间");
+        entry(list, "mysql_global_status_mysqlx_ssl_server_not_before",                  "X协议SSL证书生效时间");
+
+        // ========== MySQL 状态 (X Protocol 语句 / 工作线程) ==========
+        entry(list, "mysql_global_status_mysqlx_stmt_create_collection",                 "X协议创建集合");
+        entry(list, "mysql_global_status_mysqlx_stmt_create_collection_index",           "X协议创建集合索引");
+        entry(list, "mysql_global_status_mysqlx_stmt_disable_notices",                   "X协议禁用通知");
+        entry(list, "mysql_global_status_mysqlx_stmt_drop_collection",                   "X协议删除集合");
+        entry(list, "mysql_global_status_mysqlx_stmt_drop_collection_index",             "X协议删除集合索引");
+        entry(list, "mysql_global_status_mysqlx_stmt_enable_notices",                    "X协议启用通知");
+        entry(list, "mysql_global_status_mysqlx_stmt_ensure_collection",                 "X协议确保集合存在");
+        entry(list, "mysql_global_status_mysqlx_stmt_execute_mysqlx",                    "X协议执行MySQLx语句");
+        entry(list, "mysql_global_status_mysqlx_stmt_execute_sql",                       "X协议执行SQL语句");
+        entry(list, "mysql_global_status_mysqlx_stmt_execute_xplugin",                   "X协议执行XPlugin语句");
+        entry(list, "mysql_global_status_mysqlx_stmt_get_collection_options",            "X协议获取集合选项");
+        entry(list, "mysql_global_status_mysqlx_stmt_kill_client",                       "X协议终止客户端");
+        entry(list, "mysql_global_status_mysqlx_stmt_list_clients",                      "X协议列出客户端");
+        entry(list, "mysql_global_status_mysqlx_stmt_list_notices",                      "X协议列出通知");
+        entry(list, "mysql_global_status_mysqlx_stmt_list_objects",                      "X协议列出对象");
+        entry(list, "mysql_global_status_mysqlx_stmt_modify_collection_options",         "X协议修改集合选项");
+        entry(list, "mysql_global_status_mysqlx_stmt_ping",                              "X协议Ping");
+        entry(list, "mysql_global_status_mysqlx_worker_threads",                         "X协议工作线程数");
+        entry(list, "mysql_global_status_mysqlx_worker_threads_active",                  "X协议活跃工作线程数");
+
+        // ========== MySQL 状态 (文件/表/事务) ==========
+        entry(list, "mysql_global_status_not_flushed_delayed_rows",                      "未刷新延迟行数");
+        entry(list, "mysql_global_status_ongoing_anonymous_transaction_count",           "进行中匿名事务数");
+        entry(list, "mysql_global_status_open_files",                                    "打开文件数");
+        entry(list, "mysql_global_status_open_streams",                                  "打开流数");
+        entry(list, "mysql_global_status_open_table_definitions",                        "打开表定义数");
+        entry(list, "mysql_global_status_opened_files",                                  "累计打开文件数");
+        entry(list, "mysql_global_status_opened_table_definitions",                      "累计打开表定义数");
+
+        // ========== MySQL 状态 (Performance Schema 丢失计数) ==========
+        entry(list, "mysql_global_status_performance_schema_lost_total",                 "性能模式丢失计数总数");
+        entry(list, "mysql_global_status_prepared_stmt_count",                           "预处理语句数");
+        entry(list, "mysql_global_status_replica_open_temp_tables",                      "从库打开临时表数");
+        entry(list, "mysql_global_status_resource_group_supported",                      "资源组支持");
+        entry(list, "mysql_global_status_secondary_engine_execution_count",              "辅助引擎执行次数");
+        entry(list, "mysql_global_status_slave_open_temp_tables",                        "从库打开临时表数(旧)");
+        entry(list, "mysql_global_status_slow_launch_threads",                           "慢启动线程数");
+
+        // ========== MySQL 状态 (SSL) ==========
+        entry(list, "mysql_global_status_ssl_accept_renegotiates",                       "SSL接受重协商数");
+        entry(list, "mysql_global_status_ssl_accepts",                                   "SSL接受连接数");
+        entry(list, "mysql_global_status_ssl_callback_cache_hits",                       "SSL回调缓存命中数");
+        entry(list, "mysql_global_status_ssl_client_connects",                           "SSL客户端连接数");
+        entry(list, "mysql_global_status_ssl_connect_renegotiates",                      "SSL连接重协商数");
+        entry(list, "mysql_global_status_ssl_ctx_verify_depth",                          "SSL上下文验证深度");
+        entry(list, "mysql_global_status_ssl_ctx_verify_mode",                           "SSL上下文验证模式");
+        entry(list, "mysql_global_status_ssl_default_timeout",                           "SSL默认超时");
+        entry(list, "mysql_global_status_ssl_finished_accepts",                          "SSL完成接受数");
+        entry(list, "mysql_global_status_ssl_finished_connects",                         "SSL完成连接数");
+        entry(list, "mysql_global_status_ssl_server_not_after",                          "SSL证书到期时间");
+        entry(list, "mysql_global_status_ssl_server_not_before",                         "SSL证书生效时间");
+        entry(list, "mysql_global_status_ssl_session_cache_hits",                        "SSL会话缓存命中数");
+        entry(list, "mysql_global_status_ssl_session_cache_misses",                      "SSL会话缓存未命中数");
+        entry(list, "mysql_global_status_ssl_session_cache_overflows",                   "SSL会话缓存溢出数");
+        entry(list, "mysql_global_status_ssl_session_cache_size",                        "SSL会话缓存大小");
+        entry(list, "mysql_global_status_ssl_session_cache_timeout",                     "SSL会话缓存超时");
+        entry(list, "mysql_global_status_ssl_session_cache_timeouts",                    "SSL会话缓存超时次数");
+        entry(list, "mysql_global_status_ssl_sessions_reused",                           "SSL会话复用数");
+        entry(list, "mysql_global_status_ssl_used_session_cache_entries",                "SSL已用会话缓存条目数");
+        entry(list, "mysql_global_status_ssl_verify_depth",                              "SSL验证深度");
+        entry(list, "mysql_global_status_ssl_verify_mode",                               "SSL验证模式");
+
+        // ========== MySQL 状态 (TC Log / 遥测 / 事务隔离级别) ==========
+        entry(list, "mysql_global_status_tc_log_max_pages_used",                         "TC日志最大使用页数");
+        entry(list, "mysql_global_status_tc_log_page_size",                              "TC日志页大小");
+        entry(list, "mysql_global_status_tc_log_page_waits",                             "TC日志页等待次数");
+        entry(list, "mysql_global_status_telemetry_traces_supported",                    "遥测追踪支持");
+        entry(list, "mysql_transaction_isolation",                                       "当前事务隔离级别");
 
         // ========== MySQL Exporter 自监控 / 系统 ==========
         entry(list, "mysql_up",                                              "MySQL 存活状态");
