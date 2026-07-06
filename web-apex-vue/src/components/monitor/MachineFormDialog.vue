@@ -23,6 +23,7 @@
         <el-select v-model="form.osType" placeholder="请选择系统类型" style="width: 100%">
           <el-option label="Linux" value="LINUX" />
           <el-option label="Windows" value="WINDOWS" />
+          <el-option label="MySQL" value="MYSQL" />
         </el-select>
       </el-form-item>
       <el-form-item label="Exporter 端口" prop="exporterPort">

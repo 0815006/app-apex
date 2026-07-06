@@ -8,8 +8,8 @@
     @opened="loadData"
     class="scan-dialog"
   >
-    <!-- 顶栏：核心实时指标 -->
-    <div class="scan-header" v-if="headerReachable != null">
+    <!-- 顶栏：核心实时指标（OS 模式） -->
+    <div class="scan-header" v-if="headerReachable != null && machine?.osType !== 'MYSQL'">
       <span v-if="headerReachable" class="header-metrics">
         <span class="h-cpu">CPU: {{ headerCpu.toFixed(1) }}%</span>
         <span class="h-sep">|</span>
@@ -18,6 +18,27 @@
         <span class="h-disk">磁盘: {{ headerDisk.toFixed(1) }}%</span>
         <span class="h-sep">|</span>
         <span class="h-net">↙{{ formatBytes(headerNetRx) }} ↗{{ formatBytes(headerNetTx) }}</span>
+        <span class="h-sep">|</span>
+        <span class="h-uptime">{{ formatUptime(headerUptime) }}</span>
+      </span>
+      <span v-else class="h-error">⚠️ {{ headerErrorMsg || '无法连接 Exporter' }}</span>
+    </div>
+
+    <!-- 顶栏：核心实时指标（MySQL 模式） -->
+    <div class="scan-header mysql-header" v-if="headerReachable != null && machine?.osType === 'MYSQL'">
+      <span v-if="headerReachable" class="header-metrics">
+        <span class="h-conn">
+          连接: <strong>{{ headerMysqlConnections }}</strong>/{{ headerMysqlMaxConnections }}
+          ({{ mysqlConnPct.toFixed(0) }}%)
+        </span>
+        <span class="h-sep">|</span>
+        <span class="h-bp">命中: {{ headerMysqlBpHitRate.toFixed(1) }}%</span>
+        <span class="h-sep">|</span>
+        <span class="h-thread">线程: {{ headerMysqlThreadsRunning }}</span>
+        <span class="h-sep">|</span>
+        <span class="h-slow">🐌 慢查: {{ formatCount(headerMysqlSlowQueries) }}</span>
+        <span class="h-sep">|</span>
+        <span class="h-qps">📊 查询: {{ formatCount(headerMysqlQueriesTotal) }}</span>
         <span class="h-sep">|</span>
         <span class="h-uptime">{{ formatUptime(headerUptime) }}</span>
       </span>
@@ -128,7 +149,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { MonitorMachine, MonitorFullMetrics, MonitorMetricItem } from '@/types/monitor'
 import type { MonitorRealtime } from '@/types/monitor'
@@ -167,6 +188,13 @@ function getCategoryIcon(key: string): string {
     process: '🏭',
     system: '🖧',
     runtime: '☕',
+    connection: '🔗',
+    query: '🔍',
+    innodb: '🗄️',
+    thread: '🧵',
+    table_op: '📋',
+    handler: '🤲',
+    config: '🔧',
   }
   return icons[key] || '📊'
 }
@@ -190,7 +218,7 @@ const savingRow = ref(false)
 const fullMetrics = ref<MonitorFullMetrics | null>(null)
 const activeCategories = ref<string[]>(['cpu', 'memory', 'disk', 'network'])
 
-// 顶栏实时指标
+// 顶栏实时指标（OS 通用）
 const headerReachable = ref<boolean | null>(null)
 const headerCpu = ref(0)
 const headerMem = ref(0)
@@ -199,6 +227,26 @@ const headerNetRx = ref(0)
 const headerNetTx = ref(0)
 const headerUptime = ref(0)
 const headerErrorMsg = ref('')
+
+// 顶栏实时指标（MySQL 专用）
+const headerMysqlConnections = ref(0)
+const headerMysqlMaxConnections = ref(0)
+const headerMysqlBpHitRate = ref(0)
+const headerMysqlSlowQueries = ref(0)
+const headerMysqlQueriesTotal = ref(0)
+const headerMysqlThreadsRunning = ref(0)
+
+/** MySQL 连接数百分比 */
+const mysqlConnPct = computed(() => {
+  if (headerMysqlMaxConnections.value === 0) return 0
+  return Math.round((headerMysqlConnections.value / headerMysqlMaxConnections.value) * 100)
+})
+
+function formatCount(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1000000) return (n / 1000).toFixed(1) + 'K'
+  return (n / 1000000).toFixed(1) + 'M'
+}
 
 async function loadData() {
   if (!props.machine) return
@@ -220,6 +268,13 @@ async function loadData() {
       headerNetTx.value = realtime.networkTxBytes
       headerUptime.value = realtime.uptimeSeconds
       headerErrorMsg.value = realtime.errorMsg || ''
+      // MySQL 专用字段
+      headerMysqlConnections.value = realtime.mysqlConnections
+      headerMysqlMaxConnections.value = realtime.mysqlMaxConnections
+      headerMysqlBpHitRate.value = realtime.mysqlBufferPoolHitRate
+      headerMysqlSlowQueries.value = realtime.mysqlSlowQueries
+      headerMysqlQueriesTotal.value = realtime.mysqlQueriesTotal
+      headerMysqlThreadsRunning.value = realtime.mysqlThreadsRunning
     } else {
       headerReachable.value = metrics.reachable
       headerErrorMsg.value = metrics.errorMsg || ''
@@ -326,6 +381,14 @@ async function handleRemoveCustom(item: MonitorMetricItem) {
 .scan-header .h-uptime { color: #8D6E63; font-size: 12px; }
 .scan-header .h-sep { color: #DCDFE6; margin: 0 8px; }
 .scan-header .h-error { color: #F56C6C; }
+
+/* MySQL 顶栏专属颜色 */
+.scan-header .h-conn { color: #409EFF; }
+.scan-header .h-conn strong { color: #303133; }
+.scan-header .h-bp { color: #67C23A; }
+.scan-header .h-thread { color: #E6A23C; }
+.scan-header .h-slow { color: #F56C6C; }
+.scan-header .h-qps { color: #00ACC1; }
 
 .scan-loading {
   display: flex;

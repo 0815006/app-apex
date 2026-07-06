@@ -23,7 +23,7 @@ public class MonitorMachine {
     /** 机器IP */
     private String ip;
 
-    /** WINDOWS 或 LINUX */
+    /** WINDOWS、LINUX 或 MYSQL */
     private String osType;
 
     /** Exporter端口 */

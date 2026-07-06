@@ -551,6 +551,37 @@ public class MonitorService {
     }
 
     // =============================================
+    // MySQL 专用指标解析
+    // =============================================
+
+    public long parseMysqlConnections(String metricsText) {
+        return (long) extractMetricValue(metricsText, "mysql_global_status_threads_connected");
+    }
+
+    public long parseMysqlMaxConnections(String metricsText) {
+        return (long) extractMetricValue(metricsText, "mysql_global_variables_max_connections");
+    }
+
+    public double parseMysqlBufferPoolHitRate(String metricsText) {
+        double readRequests = extractMetricValue(metricsText, "mysql_global_status_innodb_buffer_pool_read_requests");
+        double reads = extractMetricValue(metricsText, "mysql_global_status_innodb_buffer_pool_reads");
+        if (readRequests == 0) return 0;
+        return Math.max(0, Math.min(100, (readRequests - reads) / readRequests * 100));
+    }
+
+    public long parseMysqlSlowQueries(String metricsText) {
+        return (long) extractMetricValue(metricsText, "mysql_global_status_slow_queries");
+    }
+
+    public long parseMysqlQueriesTotal(String metricsText) {
+        return (long) extractMetricValue(metricsText, "mysql_global_status_queries");
+    }
+
+    public long parseMysqlThreadsRunning(String metricsText) {
+        return (long) extractMetricValue(metricsText, "mysql_global_status_threads_running");
+    }
+
+    // =============================================
     // 实时指标查询（容量监控卡片用）
     // =============================================
 
@@ -579,6 +610,22 @@ public class MonitorService {
             long[] net = parseNetworkBytes(metricsText, osType);
             long uptime = parseUptimeSeconds(metricsText, osType);
             double[] load = parseLoadAvg(metricsText, osType);
+
+            // MySQL 专用指标
+            long mysqlConnections = 0;
+            long mysqlMaxConnections = 0;
+            double mysqlBufferPoolHitRate = 0;
+            long mysqlSlowQueries = 0;
+            long mysqlQueriesTotal = 0;
+            long mysqlThreadsRunning = 0;
+            if ("MYSQL".equalsIgnoreCase(osType)) {
+                mysqlConnections = parseMysqlConnections(metricsText);
+                mysqlMaxConnections = parseMysqlMaxConnections(metricsText);
+                mysqlBufferPoolHitRate = parseMysqlBufferPoolHitRate(metricsText);
+                mysqlSlowQueries = parseMysqlSlowQueries(metricsText);
+                mysqlQueriesTotal = parseMysqlQueriesTotal(metricsText);
+                mysqlThreadsRunning = parseMysqlThreadsRunning(metricsText);
+            }
 
             // 解析全量指标，匹配定制项
             List<ParsedMetric> allMetrics = parseAllMetrics(metricsText);
@@ -609,7 +656,9 @@ public class MonitorService {
                     cpu, mem, disk,
                     net[0], net[1], uptime,
                     load[0], load[1], load[2],
-                    portStatusList);
+                    portStatusList,
+                    mysqlConnections, mysqlMaxConnections, mysqlBufferPoolHitRate,
+                    mysqlSlowQueries, mysqlQueriesTotal, mysqlThreadsRunning);
 
         } catch (Exception e) {
             log.warn("无法连接 Exporter {}:{} — {}", machine.getIp(), machine.getExporterPort(), e.getMessage());
@@ -623,7 +672,9 @@ public class MonitorService {
                     0, 0, 0,
                     0, 0, 0,
                     0, 0, 0,
-                    portStatusList);
+                    portStatusList,
+                    0, 0, 0,
+                    0, 0, 0);
         }
     }
 

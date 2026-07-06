@@ -18,6 +18,13 @@ public record MonitorRealtimeVO(
         double loadAvg1,
         double loadAvg5,
         double loadAvg15,
-        List<PortStatusVO> ports
+        List<PortStatusVO> ports,
+        // MySQL 专用字段（非 MySQL 时为 0）
+        long mysqlConnections,
+        long mysqlMaxConnections,
+        double mysqlBufferPoolHitRate,
+        long mysqlSlowQueries,
+        long mysqlQueriesTotal,
+        long mysqlThreadsRunning
 ) {}
 

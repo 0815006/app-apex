@@ -36,8 +36,8 @@
       ⚠️ {{ realtime.errorMsg || '无法连接' }}
     </div>
 
-    <!-- 核心指标区（始终展示） -->
-    <div v-if="realtime" class="core-metrics">
+    <!-- 核心指标区（OS 模式：CPU/内存/磁盘） -->
+    <div v-if="realtime && machine.osType !== 'MYSQL'" class="core-metrics">
       <div class="core-row">
         <div class="core-item">
           <span class="core-label">CPU</span>
@@ -76,6 +76,44 @@
         <span v-if="machine.osType === 'LINUX' && realtime.loadAvg1 > 0" class="core-sub-item">
           负载 {{ realtime.loadAvg1.toFixed(1) }}
         </span>
+      </div>
+    </div>
+
+    <!-- 核心指标区（MySQL 模式：连接数/缓冲池/慢查询等） -->
+    <div v-if="realtime && machine.osType === 'MYSQL'" class="core-metrics mysql-metrics">
+      <!-- 连接数进度条 -->
+      <div class="core-item">
+        <span class="core-label">连接</span>
+        <el-progress
+          :percentage="mysqlConnectionPercent"
+          :color="mysqlConnColor"
+          :stroke-width="8"
+          :show-text="false"
+        />
+        <span class="core-value" :style="{ color: mysqlConnColor }">
+          {{ realtime.mysqlConnections }}/{{ realtime.mysqlMaxConnections }}
+        </span>
+      </div>
+      <!-- 缓冲池命中率 -->
+      <div class="core-item">
+        <span class="core-label">命中</span>
+        <el-progress
+          :percentage="clampPercent(realtime.mysqlBufferPoolHitRate)"
+          :color="bufferPoolColor"
+          :stroke-width="8"
+          :show-text="false"
+        />
+        <span class="core-value" :style="{ color: bufferPoolColor }">{{ realtime.mysqlBufferPoolHitRate.toFixed(1) }}%</span>
+      </div>
+      <!-- 活跃线程数 -->
+      <div class="core-item">
+        <span class="core-label">线程</span>
+        <span class="core-value" style="color: #303133;">{{ realtime.mysqlThreadsRunning }}</span>
+      </div>
+      <div class="core-sub">
+        <span class="core-sub-item">🐌 慢查: {{ formatCount(realtime.mysqlSlowQueries) }}</span>
+        <span class="core-sub-item">📊 查询: {{ formatCount(realtime.mysqlQueriesTotal) }}</span>
+        <span v-if="realtime.uptimeSeconds > 0" class="core-sub-item">{{ formatUptime(realtime.uptimeSeconds) }}</span>
       </div>
     </div>
 
@@ -142,6 +180,12 @@ function clampPercent(v: number): number {
   return Math.round(v)
 }
 
+function formatCount(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1000000) return (n / 1000).toFixed(1) + 'K'
+  return (n / 1000000).toFixed(1) + 'M'
+}
+
 const props = defineProps<{
   machine: MonitorMachine
 }>()
@@ -176,6 +220,25 @@ const diskColor = computed(() => {
   const v = realtime.value.diskUsage
   if (v >= 90) return '#F56C6C'
   if (v >= 70) return '#E6A23C'
+  return '#67C23A'
+})
+
+const mysqlConnectionPercent = computed(() => {
+  if (!realtime.value || realtime.value.mysqlMaxConnections === 0) return 0
+  return clampPercent((realtime.value.mysqlConnections / realtime.value.mysqlMaxConnections) * 100)
+})
+
+const mysqlConnColor = computed(() => {
+  const v = mysqlConnectionPercent.value
+  if (v >= 90) return '#F56C6C'
+  if (v >= 70) return '#E6A23C'
+  return '#67C23A'
+})
+
+const bufferPoolColor = computed(() => {
+  const v = realtime.value?.mysqlBufferPoolHitRate ?? 100
+  if (v < 90) return '#F56C6C'
+  if (v < 95) return '#E6A23C'
   return '#67C23A'
 })
 

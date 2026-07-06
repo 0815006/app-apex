@@ -8,7 +8,7 @@ export interface MonitorMachine {
   id: number
   machineName: string
   ip: string
-  osType: 'WINDOWS' | 'LINUX'
+  osType: 'WINDOWS' | 'LINUX' | 'MYSQL'
   exporterPort: number
   refreshInterval: number
   isEnabled: boolean
@@ -39,6 +39,18 @@ export interface MonitorRealtime {
   reachable: boolean
   errorMsg: string | null
   ports: CustomMetricStatus[]   // 定制指标状态列表（复用原 ports 字段名保持兼容）
+  /** MySQL 专用：当前连接数（非 MySQL 时为 0） */
+  mysqlConnections: number
+  /** MySQL 专用：最大连接数配置（非 MySQL 时为 0） */
+  mysqlMaxConnections: number
+  /** MySQL 专用：InnoDB 缓冲池命中率 0-100（非 MySQL 时为 0） */
+  mysqlBufferPoolHitRate: number
+  /** MySQL 专用：慢查询累计数（非 MySQL 时为 0） */
+  mysqlSlowQueries: number
+  /** MySQL 专用：查询累计总数（非 MySQL 时为 0） */
+  mysqlQueriesTotal: number
+  /** MySQL 专用：活跃线程数（非 MySQL 时为 0） */
+  mysqlThreadsRunning: number
 }
 
 /** 定制指标在卡片上的实时状态 */
