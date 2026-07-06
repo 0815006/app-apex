@@ -37,7 +37,7 @@ foreach ($conn in $tcpListeners) {
 
     # Prometheus label 中的特殊字符转义
     $escapedProc = $procName -replace '\\', '\\' -replace '"', '\"'
-    $line = "windows_listening_port{port=`"$port`",local_address=`"$localAddr`",protocol=`"tcp`",process=`"$escapedProc`",pid=`"$procId`"} 1"
+    $line = "windows_listening_port{port=`"$port`",local_address=`"$localAddr`",protocol=`"tcp`",process=`"$escapedProc`"} 1"
     [void]$sb.AppendLine($line)
 }
 
@@ -56,7 +56,7 @@ foreach ($conn in $udpListeners) {
     }
 
     $escapedProc = $procName -replace '\\', '\\' -replace '"', '\"'
-    $line = "windows_listening_port{port=`"$port`",local_address=`"$localAddr`",protocol=`"udp`",process=`"$escapedProc`",pid=`"$procId`"} 1"
+    $line = "windows_listening_port{port=`"$port`",local_address=`"$localAddr`",protocol=`"udp`",process=`"$escapedProc`"} 1"
     [void]$sb.AppendLine($line)
 }
 

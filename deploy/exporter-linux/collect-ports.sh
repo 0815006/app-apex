@@ -26,21 +26,18 @@ HEADER
     # 提取端口号 (第4列, 如 0.0.0.0:22)
     loc_col=$(echo "${line}" | awk '{print $4}')
     port="${loc_col##*:}"
-    # 提取进程名和 PID
+    # 提取进程名（不提取 PID，避免进程重启后 PID 变化导致 metricKey 断裂）
     proc_info=$(echo "${line}" | grep -oP 'users:\(\("([^"]+)"' || true)
     if [[ -n "${proc_info}" ]]; then
         proc_name=$(echo "${proc_info}" | sed 's/users:(("//' | sed 's/".*//')
     else
         proc_name="unknown"
     fi
-    pid_info=$(echo "${line}" | grep -oP 'pid=\d+' | head -1 || true)
-    pid="${pid_info#pid=}"
-    [[ -z "${pid}" ]] && pid="0"
 
     # 转义特殊字符
     esc_proc=$(echo "${proc_name}" | sed 's/\\/\\\\/g; s/"/\\"/g')
     esc_addr=$(echo "${loc_col%:*}" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    echo "node_listening_port{port=\"${port}\",local_address=\"${esc_addr}\",protocol=\"tcp\",process=\"${esc_proc}\",pid=\"${pid}\"} 1"
+    echo "node_listening_port{port=\"${port}\",local_address=\"${esc_addr}\",protocol=\"tcp\",process=\"${esc_proc}\"} 1"
 done >> "${TMP_FILE}" || true
 
 # --- UDP 端口 ---
@@ -55,13 +52,10 @@ done >> "${TMP_FILE}" || true
     else
         proc_name="unknown"
     fi
-    pid_info=$(echo "${line}" | grep -oP 'pid=\d+' | head -1 || true)
-    pid="${pid_info#pid=}"
-    [[ -z "${pid}" ]] && pid="0"
 
     esc_proc=$(echo "${proc_name}" | sed 's/\\/\\\\/g; s/"/\\"/g')
     esc_addr=$(echo "${loc_col%:*}" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    echo "node_listening_port{port=\"${port}\",local_address=\"${esc_addr}\",protocol=\"udp\",process=\"${esc_proc}\",pid=\"${pid}\"} 1"
+    echo "node_listening_port{port=\"${port}\",local_address=\"${esc_addr}\",protocol=\"udp\",process=\"${esc_proc}\"} 1"
 done >> "${TMP_FILE}" || true
 
 # 原子替换（如果 .tmp 不存在则仅保留 HEADER）
