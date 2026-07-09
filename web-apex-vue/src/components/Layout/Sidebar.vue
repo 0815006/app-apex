@@ -27,10 +27,10 @@
         <el-icon><ChatDotRound /></el-icon>
         <span>AI大模型</span>
       </el-menu-item>
-      <el-menu-item index="/agent">
+      <!-- <el-menu-item index="/agent">
         <el-icon><Cpu /></el-icon>
         <span>Agent</span>
-      </el-menu-item>
+      </el-menu-item> -->
       <el-menu-item index="/skills">
         <el-icon><MagicStick /></el-icon>
         <span>Skill工具</span>
