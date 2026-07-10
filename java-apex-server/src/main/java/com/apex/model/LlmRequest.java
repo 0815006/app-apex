@@ -9,6 +9,7 @@ import java.util.Map;
 /**
  * 发送给 LLM 的 OpenAI 兼容请求体（支持 tools/tool_choice）。
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record LlmRequest(
         String model,
         List<Message> messages,

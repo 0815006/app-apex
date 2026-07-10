@@ -217,11 +217,12 @@ public class ChatService {
         session.setUpdateTime(LocalDateTime.now());
         chatSessionMapper.updateById(session);
 
-        // 5. 根据 mode 分流
+        // 5. 根据 mode 分流（防御：AGENT 但无 workspaceId 时降级为 CHAT）
         if ("AGENT".equals(mode)) {
             String wsId = session.getWorkspaceId();
             if (wsId == null || wsId.isBlank()) {
-                throw new BusinessException(400, "Agent 会话缺少工作空间关联");
+                log.warn("[{}] AGENT 会话缺少 workspaceId，降级为 CHAT: sessionId={}", empNo, sessionId);
+                return executeClassicChat(session, config, content, skillId, userMsg);
             }
             return executeAgentLoop(session, config, content, skillId, userMsg);
         } else {

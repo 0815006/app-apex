@@ -84,7 +84,7 @@ export function sendChatMessage(
   }
 
   let streamTimeout: ReturnType<typeof setTimeout> | null = null
-  const READ_TIMEOUT_MS = 60_000
+  const READ_TIMEOUT_MS = 120_000
 
   function resetTimeout() {
     if (streamTimeout) clearTimeout(streamTimeout)

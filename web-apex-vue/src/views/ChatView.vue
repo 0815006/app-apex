@@ -390,7 +390,7 @@ const renameInputRef = ref<InstanceType<typeof import('element-plus').ElInput> |
 async function loadSessions() {
   sessionLoading.value = true
   try {
-    const res = await listSessions()
+    const res = await listSessions('CHAT')
     if (res.code === 200) {
       sessions.value = res.data
     }
