@@ -28,18 +28,18 @@
     <div class="scan-header java-header" v-if="headerReachable != null && isScanJavaOsType">
       <span v-if="headerReachable" class="header-metrics">
         <span class="h-heap">
-          堆: <strong>{{ headerJvmHeapUsage.toFixed(1) }}%</strong>
+          堆: <strong>{{ safeNum(headerJvmHeapUsage).toFixed(1) }}%</strong>
         </span>
         <span class="h-sep">|</span>
-        <span class="h-cpu">进程: {{ headerProcessCpu.toFixed(1) }}%</span>
+        <span class="h-cpu">进程: {{ safeNum(headerProcessCpu).toFixed(1) }}%</span>
         <span class="h-sep">|</span>
-        <span class="h-thread">线程: {{ headerJvmThreadCount }}</span>
+        <span class="h-thread">线程: {{ safeNum(headerJvmThreadCount) }}</span>
         <span class="h-sep">|</span>
-        <span class="h-gc">🧹 GC {{ headerJvmGcPause.toFixed(2) }}s / {{ formatCount(headerJvmGcCount) }}次</span>
-        <span v-if="headerHttpRequestCount > 0" class="h-sep">|</span>
-        <span v-if="headerHttpRequestCount > 0" class="h-qps">🌐 请求 {{ formatCount(headerHttpRequestCount) }}</span>
-        <span v-if="headerAppUptime > 0" class="h-sep">|</span>
-        <span v-if="headerAppUptime > 0" class="h-uptime">⏱ {{ formatUptime(headerAppUptime) }}</span>
+        <span class="h-gc">🧹 GC {{ safeNum(headerJvmGcPause).toFixed(2) }}s / {{ formatCount(safeNum(headerJvmGcCount)) }}次</span>
+        <span v-if="safeNum(headerHttpRequestCount) > 0" class="h-sep">|</span>
+        <span v-if="safeNum(headerHttpRequestCount) > 0" class="h-qps">🌐 请求 {{ formatCount(safeNum(headerHttpRequestCount)) }}</span>
+        <span v-if="safeNum(headerAppUptime) > 0" class="h-sep">|</span>
+        <span v-if="safeNum(headerAppUptime) > 0" class="h-uptime">⏱ {{ formatUptime(safeNum(headerAppUptime)) }}</span>
       </span>
       <span v-else class="h-error">⚠️ {{ headerErrorMsg || '无法连接 Exporter' }}</span>
     </div>
@@ -283,6 +283,12 @@ function formatCount(n: number): string {
   return (n / 1000000).toFixed(1) + 'M'
 }
 
+/** 安全取值：若字段为 undefined/null/NaN，返回 0 */
+function safeNum(val: number | undefined | null): number {
+  if (val == null || Number.isNaN(val)) return 0
+  return val
+}
+
 async function loadData() {
   if (!props.machine) return
   loading.value = true
@@ -311,13 +317,13 @@ async function loadData() {
       headerMysqlQueriesTotal.value = realtime.mysqlQueriesTotal
       headerMysqlThreadsRunning.value = realtime.mysqlThreadsRunning
       // JAVA 专用字段
-      headerJvmHeapUsage.value = realtime.jvmHeapUsage
-      headerProcessCpu.value = realtime.processCpuUsage
-      headerJvmThreadCount.value = realtime.jvmThreadCount
-      headerJvmGcPause.value = realtime.jvmGcPauseSeconds
-      headerJvmGcCount.value = realtime.jvmGcCount
-      headerHttpRequestCount.value = realtime.httpRequestCount
-      headerAppUptime.value = realtime.appUptimeSeconds
+      headerJvmHeapUsage.value = safeNum(realtime.jvmHeapUsage)
+      headerProcessCpu.value = safeNum(realtime.processCpuUsage)
+      headerJvmThreadCount.value = safeNum(realtime.jvmThreadCount)
+      headerJvmGcPause.value = safeNum(realtime.jvmGcPauseSeconds)
+      headerJvmGcCount.value = safeNum(realtime.jvmGcCount)
+      headerHttpRequestCount.value = safeNum(realtime.httpRequestCount)
+      headerAppUptime.value = safeNum(realtime.appUptimeSeconds)
     } else {
       headerReachable.value = metrics.reachable
       headerErrorMsg.value = metrics.errorMsg || ''

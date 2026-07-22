@@ -84,32 +84,32 @@
       <div class="core-item">
         <span class="core-label">堆</span>
         <el-progress
-          :percentage="clampPercent(realtime.jvmHeapUsage)"
+          :percentage="clampPercent(safeNum(realtime.jvmHeapUsage))"
           :color="jvmHeapColor"
           :stroke-width="8"
           :show-text="false"
         />
-        <span class="core-value" :style="{ color: jvmHeapColor }">{{ realtime.jvmHeapUsage.toFixed(1) }}%</span>
+        <span class="core-value" :style="{ color: jvmHeapColor }">{{ safeNum(realtime.jvmHeapUsage).toFixed(1) }}%</span>
       </div>
       <div class="core-item">
         <span class="core-label">进程</span>
         <el-progress
-          :percentage="clampPercent(realtime.processCpuUsage)"
+          :percentage="clampPercent(safeNum(realtime.processCpuUsage))"
           :color="jvmProcessCpuColor"
           :stroke-width="8"
           :show-text="false"
         />
-        <span class="core-value" :style="{ color: jvmProcessCpuColor }">{{ realtime.processCpuUsage.toFixed(1) }}%</span>
+        <span class="core-value" :style="{ color: jvmProcessCpuColor }">{{ safeNum(realtime.processCpuUsage).toFixed(1) }}%</span>
       </div>
       <div class="core-item">
         <span class="core-label">线程</span>
-        <span class="core-value" style="color: #303133;">{{ realtime.jvmThreadCount }}</span>
+        <span class="core-value" style="color: #303133;">{{ safeNum(realtime.jvmThreadCount) }}</span>
       </div>
       <div class="core-sub">
-        <span class="core-sub-item">🧹 GC {{ realtime.jvmGcPauseSeconds.toFixed(2) }}s / {{ formatCount(realtime.jvmGcCount) }}次</span>
-        <span v-if="realtime.jvmDaemonThreadCount > 0" class="core-sub-item">👤 守护 {{ realtime.jvmDaemonThreadCount }}</span>
-        <span v-if="realtime.httpRequestCount > 0" class="core-sub-item">🌐 请求 {{ formatCount(realtime.httpRequestCount) }}</span>
-        <span v-if="realtime.appUptimeSeconds > 0" class="core-sub-item">⏱ {{ formatUptime(realtime.appUptimeSeconds) }}</span>
+        <span class="core-sub-item">🧹 GC {{ safeNum(realtime.jvmGcPauseSeconds).toFixed(2) }}s / {{ formatCount(safeNum(realtime.jvmGcCount)) }}次</span>
+        <span v-if="safeNum(realtime.jvmDaemonThreadCount) > 0" class="core-sub-item">👤 守护 {{ safeNum(realtime.jvmDaemonThreadCount) }}</span>
+        <span v-if="safeNum(realtime.httpRequestCount) > 0" class="core-sub-item">🌐 请求 {{ formatCount(safeNum(realtime.httpRequestCount)) }}</span>
+        <span v-if="safeNum(realtime.appUptimeSeconds) > 0" class="core-sub-item">⏱ {{ formatUptime(safeNum(realtime.appUptimeSeconds)) }}</span>
       </div>
     </div>
 
@@ -263,7 +263,7 @@ const isJavaOsType = computed(() =>
 
 const jvmHeapColor = computed(() => {
   if (!realtime.value) return '#E6E6E6'
-  const v = realtime.value.jvmHeapUsage
+  const v = safeNum(realtime.value.jvmHeapUsage)
   if (v >= 90) return '#F56C6C'
   if (v >= 70) return '#E6A23C'
   return '#67C23A'
@@ -271,11 +271,17 @@ const jvmHeapColor = computed(() => {
 
 const jvmProcessCpuColor = computed(() => {
   if (!realtime.value) return '#E6E6E6'
-  const v = realtime.value.processCpuUsage
+  const v = safeNum(realtime.value.processCpuUsage)
   if (v >= 90) return '#F56C6C'
   if (v >= 70) return '#E6A23C'
   return '#67C23A'
 })
+
+/** 安全取值：若字段为 undefined/null/NaN，返回 0 */
+function safeNum(val: number | undefined | null): number {
+  if (val == null || Number.isNaN(val)) return 0
+  return val
+}
 
 const mysqlConnectionPercent = computed(() => {
   if (!realtime.value || realtime.value.mysqlMaxConnections === 0) return 0
