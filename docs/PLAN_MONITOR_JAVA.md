@@ -1,23 +1,47 @@
-# Java/JVM 监控接入方案 — 实施计划
+# Java/JVM 监控接入方案 — 实施计划（双模式：Actuator + JMX Exporter）
 
-> **目标**：将本项目自身 Java 应用的 JVM 运行状态接入现有监控体系，像监控 Windows/Linux 一样监控 Java。
-> **数据源**：利用已部署的 Spring Boot Actuator + Micrometer Prometheus，对接 `/actuator/prometheus` 端点的 Prometheus Text 格式输出。
+> **目标**：将 Java 应用的 JVM 运行状态接入现有监控体系。同时支持两种数据源：
+> - **Actuator**：Spring Boot 项目内置 `/actuator/prometheus`（自己的项目，已部署）
+> - **JMX Exporter**：`-javaagent` 无侵入挂载 `/metrics`（别人的项目，无需改代码）
+>
+> **核心洞察**：两者输出的 Prometheus Text 指标名完全一致（均为 Micrometer 标准），解析代码 100% 可复用。
+>
 > **技术栈**：Spring Boot 3.4+ (Java 21 虚拟线程) + Vue 3 (Vite 6, TypeScript, Element Plus) + MySQL 8.4
 
 ---
 
-## 1. 核心思路
+## 1. 设计决策：两个子类型，零额外字段
 
-现有的 `MonitorMachine` 实体已支持三种 `osType`：`WINDOWS`、`LINUX`、`MYSQL`。本次新增 `JAVA` 作为第四种类型，整体实现路径完全复用现有架构：
+### 1.1 为什么用子类型而不是路径字段
 
-| 维度 | WINDOWS/LINUX | MYSQL | **JAVA（新增）** |
-|------|--------------|-------|-----------------|
-| 数据源 | node_exporter / windows_exporter | mysqld_exporter | **本应用自身 `/actuator/prometheus`** |
-| 默认端口 | 9100 / 9182 | 9104 | **8080（应用服务端口）** |
-| 核心指标 | CPU/内存/磁盘/网络 | 连接数/缓冲池/慢查询 | **堆内存/GC/线程/CPU/HTTP 请求** |
-| 是否需要额外部署 Exporter | 是 | 是 | **否（Actuator 内置）** |
+| 方案 | 用户体验 | 实现复杂度 | 维护性 |
+|------|---------|-----------|--------|
+| ❌ 一个 JAVA + 手动填路径 | 需理解 `/actuator/prometheus` vs `/metrics` | 需新增 DB 列 + DTO 字段 | 一般 |
+| ✅ **两个子类型自动决定** | 下拉选即可，无需理解路径概念 | 无需改表结构，仅枚举扩展 | 极佳 |
 
-> **关键优势**：Java 监控不需要在目标机器上额外安装任何 Exporter 代理。Spring Boot Actuator 已内建 `/actuator/prometheus` 端点（Plan 1 已完成依赖与配置），直接 HTTP GET 即可获取 JVM 全部运行时指标。
+### 1.2 子类型定义
+
+| osType 值 | 下拉显示 | 默认端口 | 端点路径 | 适用场景 |
+|-----------|---------|---------|---------|---------|
+| `JAVA_ACTUATOR` | Java (Actuator) | **8080** | `/actuator/prometheus` | 自己的 / 别人的 Spring Boot 项目 |
+| `JAVA_JMX` | Java (JMX Exporter) | **9104** | `/metrics` | 非 Spring Boot 的 Java 应用，或无法改代码的项目 |
+
+### 1.3 架构流程图
+
+```mermaid
+flowchart TD
+    A["前端添加机器下拉"] -->|Java (Actuator)| B["osType=JAVA_ACTUATOR<br/>默认端口 8080"]
+    A -->|Java (JMX Exporter)| C["osType=JAVA_JMX<br/>默认端口 9104"]
+    B --> D[fetchMetrics]
+    C --> D
+    D -->|根据 osType 自动选择路径| E["JAVA_ACTUATOR → /actuator/prometheus<br/>JAVA_JMX → /metrics"]
+    E --> F["parseJvmHeapUsage / parseJvmGc..."]
+    F --> G["MonitorRealtimeVO<br/>同一组 JVM 字段"]
+
+    style B fill:#67C23A,color:#fff
+    style C fill:#409EFF,color:#fff
+    style F fill:#E6A23C,color:#fff
+```
 
 ---
 
@@ -25,30 +49,31 @@
 
 | 序号 | 交付物 | 类型 | 说明 |
 |------|--------|------|------|
-| 1 | `V11__add_java_os_type.sql` | Flyway 迁移 | 扩展 os_type 列注释，新增 JAVA |
-| 2 | `MonitorMachine.java` | 实体 | osType 注释更新（无需改代码） |
-| 3 | `MonitorService.java` | Service | 新增 JAVA 分支 + JVM 指标解析方法 |
-| 4 | `MonitorRealtimeVO.java` | Record | 新增 JVM 专用字段（堆内存、GC、线程、CPU） |
-| 5 | `MetricDictionary.java` | 配置 | 新增 `jvm_*` / `process_*` 前缀归类规则 + JVM 指标中文翻译 |
-| 6 | `monitor.ts` (types) | 前端类型 | osType 新增 `'JAVA'`，MonitorRealtime 新增 JVM 字段 |
-| 7 | `MachineFormDialog.vue` | 前端组件 | 系统类型下拉新增 "Java 应用" 选项 |
-| 8 | `MachineCard.vue` | 前端组件 | 新增 JAVA 专用卡片展示模式（堆/GC/线程/CPU） |
+| 1 | `V11__add_java_os_type.sql` | Flyway 迁移 | 扩展 os_type 列注释 |
+| 2 | `MonitorService.java` | Service | `fetchMetrics()` 根据 osType 选路径，新增 JAVA 分支 + JVM 解析方法 |
+| 3 | `MonitorRealtimeVO.java` | Record | 新增 8 个 JVM 专用字段 |
+| 4 | `MetricDictionary.java` | 配置 | 新增 `jvm_*` / `process_*` 前缀归类 + 中文翻译 |
+| 5 | `monitor.ts` (types) | 前端类型 | osType 新增两个 JAVA 子类型，MonitorRealtime 新增 JVM 字段 |
+| 6 | `MachineFormDialog.vue` | 前端组件 | 下拉新增两个 JAVA 选项，自动切换默认端口 |
+| 7 | `MachineCard.vue` | 前端组件 | 新增 JAVA 专用卡片模式 |
 
-> **无需变更**：`MonitorController.java`、`MonitorSampleScheduler.java`、`MonitorMachineDTO.java`、`MonitorMachineMapper.java` 均无需修改。采样调度器自动适配（通过通用的 `fetchMetrics` + `parseAllMetrics` 管道）。
+> **无需变更**：`MonitorController.java`、`MonitorSampleScheduler.java`、`MonitorMachine.java`、`MonitorMachineDTO.java`、`MonitorMachineMapper.java`。**无需新增任何数据库列。**
 
 ---
 
 ## 3. 数据库变更 (Flyway V11)
 
-### 3.1 迁移脚本
+### 3.1 迁移脚本 — 仅扩展枚举注释
 
 ```sql
 -- V11__add_java_os_type.sql
 -- =============================================
--- V11: 扩展 os_type 支持 JAVA (Actuator Prometheus)
+-- V11: 扩展 os_type 支持 JAVA_ACTUATOR 和 JAVA_JMX
+-- 无需新增列，路径在后端代码中根据 osType 自动选择
 -- =============================================
 ALTER TABLE `monitor_machine`
-    MODIFY COLUMN `os_type` VARCHAR(20) NOT NULL COMMENT 'WINDOWS、LINUX、MYSQL 或 JAVA';
+    MODIFY COLUMN `os_type` VARCHAR(20) NOT NULL
+    COMMENT 'WINDOWS、LINUX、MYSQL、JAVA_ACTUATOR 或 JAVA_JMX';
 ```
 
 **文件位置**：
@@ -56,286 +81,272 @@ ALTER TABLE `monitor_machine`
 java-apex-server/src/main/resources/db/migration/V11__add_java_os_type.sql
 ```
 
-### 3.2 实体注释更新
+### 3.2 实体无需修改
 
-[`MonitorMachine.java`](java-apex-server/src/main/java/com/apex/entity/MonitorMachine.java) 第 24 行 `osType` 字段的 Javadoc 注释更新为：
-
-```java
-/** WINDOWS、LINUX、MYSQL 或 JAVA */
-private String osType;
-```
+[`MonitorMachine.java`](java-apex-server/src/main/java/com/apex/entity/MonitorMachine.java) 的 `osType` 字段和 `exporterPort` 字段均无需改动，也无需新增任何字段。
 
 ---
 
 ## 4. 后端实现计划
 
-### 4.1 JVM 核心监控指标
+### 4.1 fetchMetrics — 根据 osType 自动选择路径
 
-从 `/actuator/prometheus` 端点返回的指标中，提取以下关键指标进行实时展示：
-
-| 指标类别 | Prometheus 指标名 | 说明 | 计算方式 |
-|---------|-------------------|------|---------|
-| **堆内存使用率** | `jvm_memory_used_bytes{area="heap"}` / `jvm_memory_max_bytes{area="heap"}` | JVM 堆内存占用百分比 | `used / max * 100` |
-| **GC 暂停时间** | `jvm_gc_pause_seconds_sum` | GC 累计暂停秒数（用于计算增量速率） | 两次采集差值 / 时间差 |
-| **GC 次数** | `jvm_gc_pause_seconds_count` | GC 累计次数 | 两次采集差值 |
-| **活动线程数** | `jvm_threads_live_threads` | 当前存活线程总数 | 直接取值 |
-| **守护线程数** | `jvm_threads_daemon_threads` | 守护线程数 | 直接取值 |
-| **进程 CPU 使用率** | `process_cpu_usage` | JVM 进程 CPU 占用比例 (0-1) | `value * 100` |
-| **HTTP 请求总数** | `http_server_requests_seconds_count` | 应用累计处理 HTTP 请求数 | 两次采集差值 |
-| **HTTP 错误率** | `http_server_requests_seconds_count{status="5xx"}` / 总量 | 5xx 错误占比 | 增量计算 |
-| **应用启动时间** | `application_started_time_seconds` | 应用已启动秒数 | 直接取值 |
-| **系统负载** | `system_load_average_1m` | 系统 1 分钟负载 | 直接取值 |
-
-### 4.2 MonitorService 新增方法
-
-#### 4.2.1 `getRealtimeMetrics()` 方法中的 JAVA 分支
-
-在 [`MonitorService.java`](java-apex-server/src/main/java/com/apex/service/MonitorService.java) 的 `getRealtimeMetrics()` 方法（约第 591-679 行）中，现有的 osType 判断逻辑（`"MYSQL".equals(osType)`）之后新增 `"JAVA".equals(osType)` 分支：
+[`MonitorService.java`](java-apex-server/src/main/java/com/apex/service/MonitorService.java) 第 146 行，将硬编码的 `/metrics` 替换为根据 osType 动态选择：
 
 ```java
-// 现有代码结构中，在 MYSQL 分支之后添加：
-else if ("JAVA".equals(osType)) {
-    vo = new MonitorRealtimeVO(
-            machineId, true, null,
-            -1, -1, -1,            // CPU/内存/磁盘沿用 -1（由 process_cpu_usage 替代 CPU）
-            0L, 0L, 0L,             // 网络、uptime 不适用
-            0.0, 0.0, 0.0,          // loadAvg 不适用
-            List.of(),              // ports 不适用
-            0L, 0L, 0.0, 0L, 0L, 0L, // MySQL 字段不适用
-            parseJvmHeapUsage(text),       // 堆内存使用率
-            parseJvmGcPauseSeconds(text),  // GC 累计暂停秒数
-            parseJvmGcCount(text),         // GC 累计次数
-            parseJvmThreadCount(text),     // 活动线程数
-            parseJvmDaemonThreadCount(text), // 守护线程数
-            parseProcessCpuUsage(text),    // 进程 CPU 使用率
-            parseHttpRequestRate(text),    // HTTP 请求总数
-            parseAppUptime(text)           // 应用启动时间
-    );
+// 改造前：
+String url = String.format("http://%s:%d/metrics", machine.getIp(), machine.getExporterPort());
+
+// 改造后：根据 osType 自动选择端点路径
+private String buildMetricsUrl(MonitorMachine machine) {
+    String path = switch (machine.getOsType().toUpperCase()) {
+        case "JAVA_ACTUATOR" -> "/actuator/prometheus";
+        default -> "/metrics";  // JAVA_JMX, WINDOWS, LINUX, MYSQL 都走 /metrics
+    };
+    return String.format("http://%s:%d%s", machine.getIp(), machine.getExporterPort(), path);
 }
 ```
 
-#### 4.2.2 新增 JVM 指标解析方法
+### 4.2 JVM 核心监控指标
 
-所有解析方法均使用与现有 `extractMetricValue` / `extractLabeledMetricValue` 一致的 Prometheus Text 行解析模式：
+| # | 指标类别 | Prometheus 指标名 | 计算方式 | Actuator | JMX Exporter |
+|---|---------|-------------------|---------|----------|-------------|
+| 1 | 堆内存使用率 | `jvm_memory_used_bytes{area="heap"}` / `jvm_memory_max_bytes{area="heap"}` | `used / max * 100` | ✅ | ✅ |
+| 2 | GC 累计暂停 | `jvm_gc_pause_seconds_sum` | 直接取值 | ✅ | ✅ |
+| 3 | GC 累计次数 | `jvm_gc_pause_seconds_count` | 直接取值 | ✅ | ✅ |
+| 4 | 活动线程数 | `jvm_threads_live_threads` | 直接取值 | ✅ | ✅ |
+| 5 | 守护线程数 | `jvm_threads_daemon_threads` | 直接取值 | ✅ | ✅ |
+| 6 | 进程 CPU | `process_cpu_usage` | `* 100` 转百分比 | ✅ | ✅ |
+| 7 | HTTP 请求总数 | `http_server_requests_seconds_count` | 直接取值 | ✅ | ❌ (返回0) |
+| 8 | 应用启动时间 | `application_started_time_seconds` | 直接取值 | ✅ | ❌ (返回0) |
+
+### 4.3 getRealtimeMetrics — 新增 JAVA 分支
+
+在 [`MonitorService.java`](java-apex-server/src/main/java/com/apex/service/MonitorService.java) 的 `getRealtimeMetrics()` 方法（约第 621 行 MYSQL 分支之后）新增：
 
 ```java
-/**
- * 解析堆内存使用率 (%) = jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} * 100
- */
+} else if ("JAVA_ACTUATOR".equalsIgnoreCase(osType) || "JAVA_JMX".equalsIgnoreCase(osType)) {
+    return new MonitorRealtimeVO(machineId, true, null,
+            -1, -1, -1,            // OS 指标不适用
+            0L, 0L, 0L,            // 网络/uptime 不适用
+            0.0, 0.0, 0.0,         // loadAvg 不适用
+            portStatusList,         // 定制指标（如果有）
+            0L, 0L, 0.0, 0L, 0L, 0L, // MySQL 字段不适用
+            parseJvmHeapUsage(metricsText),
+            parseJvmGcPauseSeconds(metricsText),
+            parseJvmGcCount(metricsText),
+            parseJvmThreadCount(metricsText),
+            parseJvmDaemonThreadCount(metricsText),
+            parseProcessCpuUsage(metricsText),
+            parseHttpRequestCount(metricsText),
+            parseAppUptime(metricsText));
+}
+```
+
+### 4.4 新增 JVM 指标解析方法
+
+复用已有的 [`extractMetricValue`](java-apex-server/src/main/java/com/apex/service/MonitorService.java:877) 和 [`extractLabeledMetricValue`](java-apex-server/src/main/java/com/apex/service/MonitorService.java:886)：
+
+```java
 private double parseJvmHeapUsage(String text) {
     double used = extractLabeledMetricValue(text, "jvm_memory_used_bytes", "area", "heap");
     double max = extractLabeledMetricValue(text, "jvm_memory_max_bytes", "area", "heap");
     if (max <= 0) return 0;
-    return used / max * 100; // #2 decimals used in front-end
+    return (used / max) * 100;
 }
 
-/**
- * 解析 GC 累计暂停秒数
- */
 private double parseJvmGcPauseSeconds(String text) {
     return extractMetricValue(text, "jvm_gc_pause_seconds_sum");
 }
 
-/**
- * 解析 GC 累计次数
- */
 private double parseJvmGcCount(String text) {
     return extractMetricValue(text, "jvm_gc_pause_seconds_count");
 }
 
-/**
- * 解析活动线程数
- */
 private double parseJvmThreadCount(String text) {
     return extractMetricValue(text, "jvm_threads_live_threads");
 }
 
-/**
- * 解析守护线程数
- */
 private double parseJvmDaemonThreadCount(String text) {
     return extractMetricValue(text, "jvm_threads_daemon_threads");
 }
 
-/**
- * 解析进程 CPU 使用率 (0-1 比例转为百分比)
- */
 private double parseProcessCpuUsage(String text) {
-    double ratio = extractMetricValue(text, "process_cpu_usage");
-    return ratio * 100;
+    return extractMetricValue(text, "process_cpu_usage") * 100;
 }
 
-/**
- * 解析 HTTP 累计请求数
- */
-private double parseHttpRequestRate(String text) {
+private double parseHttpRequestCount(String text) {
+    // JMX Exporter 无此指标，extractMetricValue 不存在时返回 0
     return extractMetricValue(text, "http_server_requests_seconds_count");
 }
 
-/**
- * 解析应用启动时间（秒）
- */
 private double parseAppUptime(String text) {
+    // JMX Exporter 无此指标，extractMetricValue 不存在时返回 0
     return extractMetricValue(text, "application_started_time_seconds");
 }
 ```
 
-> **注意**：`extractMetricValue` 和 `extractLabeledMetricValue` 是 `MonitorService` 已有的私有方法（第 877-894 行），无需重新实现。
+### 4.5 MonitorRealtimeVO 扩展
 
-#### 4.2.3 `SYS_METRICS` 扩展（可选）
-
-[`MonitorService.java`](java-apex-server/src/main/java/com/apex/service/MonitorService.java) 第 41-48 行的 `SYS_METRICS` 列表已内置 -1 到 -6 的通用指标。对于 JAVA 类型，可在 `collectSample()` 的 osType 分支判断中，当 `osType = JAVA` 时，将系统指标映射为对应的 JVM 指标名进行解析。也可以将当前已有的 6 个系统内置指标扩展为 JAVA 专用变体。推荐方案是保持现有 `SYS_METRICS` 不变，在采样器中根据 osType 做适配。
-
-#### 4.2.4 `getFullMetrics()` 中的分类适配
-
-[`MonitorService.java`](java-apex-server/src/main/java/com/apex/service/MonitorService.java) 的 `getFullMetrics()` 方法（约第 229-325 行）已通过 `MetricDictionary.inferCategory()` 自动为每条指标分类。只需在 [`MetricDictionary.java`](java-apex-server/src/main/java/com/apex/config/MetricDictionary.java) 中补全 `jvm_*` 前缀的归类规则即可（见第 5 节）。
-
-### 4.3 MonitorRealtimeVO 扩展
-
-[`MonitorRealtimeVO.java`](java-apex-server/src/main/java/com/apex/model/MonitorRealtimeVO.java) 新增 JVM 专用字段，保持与 MySQL 扩展相同的模式（非 JAVA 时为 0 / -1）：
+[`MonitorRealtimeVO.java`](java-apex-server/src/main/java/com/apex/model/MonitorRealtimeVO.java) 末尾新增：
 
 ```java
-public record MonitorRealtimeVO(
-        // ... 现有字段保持不变 ...
-        long mysqlConnections,
-        long mysqlMaxConnections,
-        double mysqlBufferPoolHitRate,
-        long mysqlSlowQueries,
-        long mysqlQueriesTotal,
-        long mysqlThreadsRunning,
-        // JAVA 专用字段（非 JAVA 时为 0 / -1）
+        // JAVA 专用字段（非 JAVA 时均为 0）
         double jvmHeapUsage,          // 堆内存使用率 0-100
         double jvmGcPauseSeconds,     // GC 累计暂停秒数
         double jvmGcCount,            // GC 累计次数
         double jvmThreadCount,        // 活动线程数
         double jvmDaemonThreadCount,  // 守护线程数
         double processCpuUsage,       // 进程 CPU 使用率 0-100
-        double httpRequestCount,      // HTTP 累计请求数
-        double appUptimeSeconds       // 应用启动时间（秒）
+        double httpRequestCount,      // HTTP 累计请求数（仅 Actuator）
+        double appUptimeSeconds       // 应用启动时间秒（仅 Actuator）
 ) {}
 ```
 
-### 4.4 无需修改的文件
+### 4.6 无需修改的文件
 
 | 文件 | 原因 |
 |------|------|
-| `MonitorController.java` | 全部接口路径不变，返回 `Result<T>` 不变 |
-| `MonitorSampleScheduler.java` | 通过通用的 `fetchMetrics()` + 采样 osType 分支适配 |
-| `MonitorMachineDTO.java` | osType 为 `String` 类型，前端直接传 `"JAVA"` 即可 |
-| `MonitorMachineMapper.java` | MyBatis Plus `BaseMapper`，自动映射 |
+| `MonitorController.java` | 接口路径和参数不变 |
+| `MonitorSampleScheduler.java` | `fetchMetrics()` 改造后自动适配 |
+| `MonitorMachine.java` | osType String 字段无需改动 |
+| `MonitorMachineDTO.java` | osType String 字段无需改动 |
+| `MonitorMachineMapper.java` | MyBatis Plus BaseMapper 自动映射 |
 
 ---
 
-## 5. MetricDictionary 扩展
+## 5. MetricDictionary 重构 + JVM 扩展
 
-### 5.1 前缀归类规则
+> **背景**：当前 [`MetricDictionary.java`](java-apex-server/src/main/java/com/apex/config/MetricDictionary.java) 已达 1585 行，每次新增指标类型都需要读写整个文件，Token 消耗极大。
+> **策略**：将 ENTRIES 静态块的 ~1310 行指标条目按监控类别拆分为 4 个独立文件，平铺在 `config/` 下，本次新增 JVM 只需新建一个 ~40 行的 `MetricJvmDict.java`。
 
-在 [`MetricDictionary.java`](java-apex-server/src/main/java/com/apex/config/MetricDictionary.java) 的 `inferCategoryByPrefix()` 方法（约第 201-208 行）中新增 JVM 相关前缀：
+### 5.1 拆分后的文件结构
+
+```
+config/
+├── MetricDictionary.java      ← 主入口（精简至 ~200 行）
+│                                 · MetricCategory 枚举
+│                                 · MetricEntry record
+│                                 · PREFIX_RULES + inferCategoryByPrefix()
+│                                 · entry() 便捷方法
+│                                 · ENTRIES 聚合入口
+│                                 · NAME_TO_ENTRY + 公共 API
+├── MetricLinuxDict.java       ← node_* 指标条目（~200 行）
+├── MetricWinDict.java         ← windows_* 指标条目（~200 行）
+├── MetricMysqlDict.java       ← mysql_* 指标条目（~500 行）
+├── MetricJvmDict.java         ← jvm_* / process_* / http_* 条目（~40 行）★ 本次新建
+├── EmpContextConfig.java
+├── MyBatisPlusConfig.java
+```
+
+### 5.2 子文件模板
+
+每个子文件结构完全一致，只暴露一个静态方法：
 
 ```java
-private static MetricCategory inferCategoryByPrefix(String metricName) {
-    // ... 现有 node_ / windows_ / mysql_ 前缀规则保持不变 ...
+// MetricJvmDict.java
+package com.apex.config;
 
-    // JVM 内存指标
-    if (metricName.startsWith("jvm_memory_") || metricName.startsWith("jvm_buffer_")) {
-        return MetricCategory.MEMORY;
-    }
-    // JVM GC 指标
-    if (metricName.startsWith("jvm_gc_")) {
-        // 可直接归入 CPU（GC 影响 CPU）或新增 GC 分类
-        return MetricCategory.CPU;
-    }
-    // JVM 线程指标
-    if (metricName.startsWith("jvm_threads_")) {
-        return MetricCategory.THREAD;
-    }
-    // JVM 类加载指标
-    if (metricName.startsWith("jvm_classes_")) {
-        return MetricCategory.RUNTIME;
-    }
-    // JVM 信息指标
-    if (metricName.startsWith("jvm_info") || metricName.startsWith("jvm_runtime_")) {
-        return MetricCategory.RUNTIME;
-    }
-    // 进程级指标
-    if (metricName.startsWith("process_")) {
-        return MetricCategory.SYSTEM;
-    }
-    // HTTP 请求指标
-    if (metricName.startsWith("http_server_requests_")) {
-        return MetricCategory.SERVICE;
-    }
-    // 应用级指标
-    if (metricName.startsWith("application_")) {
-        return MetricCategory.RUNTIME;
-    }
-    // Tomcat/Netty 指标
-    if (metricName.startsWith("tomcat_") || metricName.startsWith("executor_")) {
-        return MetricCategory.SERVICE;
-    }
+import java.util.List;
+import static com.apex.config.MetricDictionary.entry;
 
-    return MetricCategory.OTHER;
+/**
+ * JVM 指标中文翻译字典 — Actuator / JMX Exporter 通用。
+ * 分类由 {@link MetricDictionary#inferCategoryByPrefix} 自动推断。
+ */
+public final class MetricJvmDict {
+    private MetricJvmDict() {}
+
+    public static void contribute(List<MetricDictionary.MetricEntry> list) {
+        // ===== JVM 内存 =====
+        entry(list, "jvm_memory_used_bytes", "JVM 内存已使用");
+        entry(list, "jvm_memory_committed_bytes", "JVM 内存已提交");
+        entry(list, "jvm_memory_max_bytes", "JVM 内存最大值");
+        entry(list, "jvm_buffer_total_capacity_bytes", "JVM 缓冲区总容量");
+        entry(list, "jvm_buffer_count_buffers", "JVM 缓冲区数量");
+
+        // ===== JVM GC =====
+        entry(list, "jvm_gc_pause_seconds_count", "GC 次数");
+        entry(list, "jvm_gc_pause_seconds_sum", "GC 累计耗时");
+        entry(list, "jvm_gc_pause_seconds_max", "GC 最大暂停时间");
+        entry(list, "jvm_gc_memory_allocated_bytes_total", "GC 后内存分配总量");
+        entry(list, "jvm_gc_memory_promoted_bytes_total", "GC 晋升内存总量");
+        entry(list, "jvm_gc_live_data_size_bytes", "GC 存活数据大小");
+
+        // ===== JVM 线程 =====
+        entry(list, "jvm_threads_live_threads", "活动线程数");
+        entry(list, "jvm_threads_daemon_threads", "守护线程数");
+        entry(list, "jvm_threads_peak_threads", "峰值线程数");
+        entry(list, "jvm_threads_started_threads_total", "累计启动线程数");
+
+        // ===== JVM 类加载 =====
+        entry(list, "jvm_classes_loaded_classes", "已加载类数");
+        entry(list, "jvm_classes_unloaded_classes_total", "累计卸载类数");
+
+        // ===== 进程 =====
+        entry(list, "process_cpu_usage", "进程CPU使用率");
+        entry(list, "process_uptime_seconds", "进程运行时间");
+        entry(list, "process_files_max_files", "最大文件描述符");
+        entry(list, "process_files_open_files", "已打开文件描述符");
+
+        // ===== HTTP 请求（仅 Actuator） =====
+        entry(list, "http_server_requests_seconds_count", "HTTP请求总数");
+        entry(list, "http_server_requests_seconds_sum", "HTTP请求总耗时");
+        entry(list, "http_server_requests_seconds_max", "HTTP请求最大耗时");
+
+        // ===== 应用（仅 Actuator） =====
+        entry(list, "application_started_time_seconds", "应用启动时间");
+        entry(list, "application_ready_time_seconds", "应用就绪时间");
+    }
 }
 ```
 
-### 5.2 关键指标中文翻译
+### 5.3 主类聚合改造
 
-将以下核心 JVM 指标添加到字典的静态初始化块中：
-
-```java
-// ===== JVM 内存 =====
-entry(LIST, "jvm_memory_used_bytes", "JVM 内存已使用");
-entry(LIST, "jvm_memory_committed_bytes", "JVM 内存已提交");
-entry(LIST, "jvm_memory_max_bytes", "JVM 内存最大值");
-entry(LIST, "jvm_buffer_total_capacity_bytes", "JVM 缓冲区总容量");
-entry(LIST, "jvm_buffer_count_buffers", "JVM 缓冲区数量");
-
-// ===== JVM GC =====
-entry(LIST, "jvm_gc_pause_seconds_count", "GC 次数");
-entry(LIST, "jvm_gc_pause_seconds_sum", "GC 累计耗时");
-entry(LIST, "jvm_gc_pause_seconds_max", "GC 最大暂停时间");
-entry(LIST, "jvm_gc_memory_allocated_bytes_total", "GC 后内存分配总量");
-entry(LIST, "jvm_gc_memory_promoted_bytes_total", "GC 晋升内存总量");
-entry(LIST, "jvm_gc_live_data_size_bytes", "GC 存活数据大小");
-entry(LIST, "jvm_gc_overhead_percent", "GC 开销百分比");
-
-// ===== JVM 线程 =====
-entry(LIST, "jvm_threads_live_threads", "活动线程数");
-entry(LIST, "jvm_threads_daemon_threads", "守护线程数");
-entry(LIST, "jvm_threads_peak_threads", "峰值线程数");
-entry(LIST, "jvm_threads_started_threads_total", "累计启动线程数");
-entry(LIST, "jvm_threads_states_threads", "线程状态分布");
-
-// ===== JVM 类加载 =====
-entry(LIST, "jvm_classes_loaded_classes", "已加载类数");
-entry(LIST, "jvm_classes_unloaded_classes_total", "累计卸载类数");
-
-// ===== 进程 =====
-entry(LIST, "process_cpu_usage", "进程CPU使用率");
-entry(LIST, "process_uptime_seconds", "进程运行时间");
-entry(LIST, "process_start_time_seconds", "进程启动时间戳");
-entry(LIST, "process_files_max_files", "最大文件描述符");
-entry(LIST, "process_files_open_files", "已打开文件描述符");
-
-// ===== HTTP 请求 =====
-entry(LIST, "http_server_requests_seconds_count", "HTTP请求总数");
-entry(LIST, "http_server_requests_seconds_sum", "HTTP请求总耗时");
-entry(LIST, "http_server_requests_seconds_max", "HTTP请求最大耗时");
-
-// ===== 应用 =====
-entry(LIST, "application_started_time_seconds", "应用启动时间");
-entry(LIST, "application_ready_time_seconds", "应用就绪时间");
-```
-
-> 以上仅列出关键指标。实际部署后可从 `/actuator/prometheus` 端点获取完整指标列表进行补充。
-
-### 5.3 MetricCategory 扩展（可选）
-
-现有 `MetricCategory` 枚举已包含 `THREAD`、`RUNTIME` 等分类，基本满足 JVM 需求。如果未来需要更细粒度的 GC 分类，可新增：
+[`MetricDictionary.java`](java-apex-server/src/main/java/com/apex/config/MetricDictionary.java) 的 ENTRIES 静态块改为调用子字典：
 
 ```java
-GC("gc", "GC回收"),
+static {
+    List<MetricEntry> list = new ArrayList<>();
+    MetricLinuxDict.contribute(list);
+    MetricWinDict.contribute(list);
+    MetricMysqlDict.contribute(list);
+    MetricJvmDict.contribute(list);   // ← 新增一行
+    ENTRIES = Collections.unmodifiableList(list);
+}
 ```
+
+同时将 `entry()` 和 `inferCategoryByPrefix()` 的访问修饰符从 `private` 改为 `package-private`（或 `public static`），供子文件调用。
+
+### 5.4 PREFIX_RULES 新增 JVM 归类
+
+在主类的 `PREFIX_RULES` 静态块末尾（`process_` 的规则之前）新增：
+
+```java
+// ===== JVM 前缀归类 =====
+PREFIX_RULES.put("jvm_memory_",             MetricCategory.MEMORY);
+PREFIX_RULES.put("jvm_buffer_",             MetricCategory.MEMORY);
+PREFIX_RULES.put("jvm_gc_",                 MetricCategory.CPU);
+PREFIX_RULES.put("jvm_threads_",            MetricCategory.THREAD);
+PREFIX_RULES.put("jvm_classes_",            MetricCategory.RUNTIME);
+PREFIX_RULES.put("jvm_info",                MetricCategory.RUNTIME);
+PREFIX_RULES.put("jvm_runtime_",            MetricCategory.RUNTIME);
+PREFIX_RULES.put("http_server_requests_",   MetricCategory.SERVICE);
+PREFIX_RULES.put("application_",            MetricCategory.RUNTIME);
+PREFIX_RULES.put("tomcat_",                 MetricCategory.SERVICE);
+PREFIX_RULES.put("executor_",               MetricCategory.SERVICE);
+```
+
+同时将 `process_` 的归类从 `RUNTIME` 改为 `SYSTEM`，因为 JVM 语境下 `process_cpu_usage` 等指标更接近系统资源而非 Go 运行时。
+
+### 5.5 Token 消耗对比
+
+| 操作 | 拆分前 | 拆分后 |
+|------|-------|--------|
+| 新增 JVM 指标 | 读+写 1585 行 | 新建 40 行 `MetricJvmDict.java` + 主类加 1 行聚合 + 加 ~11 行 PREFIX_RULES |
+| 修改 Linux 指标 | 读+写 1585 行 | 只读写 `MetricLinuxDict.java` (~200 行) |
+| 修改 MySQL 指标 | 读+写 1585 行 | 只读写 `MetricMysqlDict.java` (~500 行) |
+
 
 ---
 
@@ -343,18 +354,21 @@ GC("gc", "GC回收"),
 
 ### 6.1 TypeScript 类型扩展
 
-[`web-apex-vue/src/types/monitor.ts`](web-apex-vue/src/types/monitor.ts) 变更：
-
-#### 6.1.1 MonitorMachine 的 osType 联合类型
+[`web-apex-vue/src/types/monitor.ts`](web-apex-vue/src/types/monitor.ts)：
 
 ```typescript
-// 第 11 行：osType 新增 'JAVA'
-osType: 'WINDOWS' | 'LINUX' | 'MYSQL' | 'JAVA'
-```
+// MonitorMachine — osType 新增两个 JAVA 子类型
+export interface MonitorMachine {
+  id: number
+  machineName: string
+  ip: string
+  osType: 'WINDOWS' | 'LINUX' | 'MYSQL' | 'JAVA_ACTUATOR' | 'JAVA_JMX'
+  exporterPort: number
+  refreshInterval: number
+  isEnabled: boolean
+}
 
-#### 6.1.2 MonitorRealtime 新增 JVM 字段
-
-```typescript
+// MonitorRealtime — 新增 JVM 字段
 export interface MonitorRealtime {
   // ... 现有字段保持不变 ...
   mysqlConnections: number
@@ -363,268 +377,365 @@ export interface MonitorRealtime {
   mysqlSlowQueries: number
   mysqlQueriesTotal: number
   mysqlThreadsRunning: number
-  /** JAVA 专用：堆内存使用率 0-100（非 JAVA 时为 0） */
-  jvmHeapUsage: number
-  /** JAVA 专用：GC 累计暂停秒数（非 JAVA 时为 0） */
-  jvmGcPauseSeconds: number
-  /** JAVA 专用：GC 累计次数（非 JAVA 时为 0） */
-  jvmGcCount: number
-  /** JAVA 专用：活动线程数（非 JAVA 时为 0） */
-  jvmThreadCount: number
-  /** JAVA 专用：守护线程数（非 JAVA 时为 0） */
-  jvmDaemonThreadCount: number
-  /** JAVA 专用：进程 CPU 使用率 0-100（非 JAVA 时为 0） */
-  processCpuUsage: number
-  /** JAVA 专用：HTTP 累计请求数（非 JAVA 时为 0） */
-  httpRequestCount: number
-  /** JAVA 专用：应用启动时间秒（非 JAVA 时为 0） */
-  appUptimeSeconds: number
+  /** JAVA 专用字段 */
+  jvmHeapUsage: number           // 堆内存使用率 0-100
+  jvmGcPauseSeconds: number      // GC 累计暂停秒数
+  jvmGcCount: number             // GC 累计次数
+  jvmThreadCount: number         // 活动线程数
+  jvmDaemonThreadCount: number   // 守护线程数
+  processCpuUsage: number        // 进程 CPU 使用率 0-100
+  httpRequestCount: number       // HTTP 累计请求数（仅 Actuator）
+  appUptimeSeconds: number       // 应用启动时间秒（仅 Actuator）
 }
 ```
 
-### 6.2 机器表单弹窗
+**工具函数**（判断是否为 Java 类型）：
+
+```typescript
+/** 判断 osType 是否为 Java 类型（Actuator 或 JMX） */
+export function isJavaOsType(osType: string): boolean {
+  return osType === 'JAVA_ACTUATOR' || osType === 'JAVA_JMX'
+}
+
+/** 判断是否为 Actuator 模式 */
+export function isActuatorMode(osType: string): boolean {
+  return osType === 'JAVA_ACTUATOR'
+}
+```
+
+### 6.2 MachineFormDialog — 新增两个 JAVA 选项
 
 [`MachineFormDialog.vue`](web-apex-vue/src/components/monitor/MachineFormDialog.vue) 变更：
 
-#### 6.2.1 系统类型下拉新增选项
-
-在 `<el-select>` 的 `<el-option>` 中新增：
+#### 6.2.1 下拉新增两个选项
 
 ```html
-<el-option label="Java 应用" value="JAVA" />
+<el-select v-model="form.osType" placeholder="请选择系统类型" style="width: 100%">
+  <el-option label="Linux" value="LINUX" />
+  <el-option label="Windows" value="WINDOWS" />
+  <el-option label="MySQL" value="MYSQL" />
+  <el-option label="Java (Actuator)" value="JAVA_ACTUATOR" />
+  <el-option label="Java (JMX Exporter)" value="JAVA_JMX" />
+</el-select>
 ```
 
-#### 6.2.2 默认值和端口联动
-
-在 `watch(osType, ...)` 或表单逻辑中增加 JAVA 分支：
+#### 6.2.2 选择时自动切换默认端口
 
 ```typescript
-// 当选择 JAVA 时，默认端口设为 8080
-if (form.osType === 'JAVA') {
-  form.exporterPort = 8080
+// osType 切换时自动调整端口
+watch(() => form.osType, (newType) => {
+  switch (newType) {
+    case 'LINUX':          form.exporterPort = 9100; break
+    case 'WINDOWS':        form.exporterPort = 9182; break
+    case 'MYSQL':          form.exporterPort = 9104; break
+    case 'JAVA_ACTUATOR':  form.exporterPort = 8080; break
+    case 'JAVA_JMX':       form.exporterPort = 9104; break
+  }
+})
+```
+#### 6.2.3 端点 URL 实时预览 + 一键复制
+
+在表单底部用一个只读输入框展示完整 URL，带复制按钮。无论新增还是编辑，随 IP / osType / 端口变化实时更新，方便用户保存后复制去浏览器验证。
+
+```html
+<!-- 端点 URL 预览（所有类型通用） -->
+<el-form-item label="端点 URL">
+  <el-input
+    :model-value="endpointUrl"
+    readonly
+    class="endpoint-url-input"
+  >
+    <template #append>
+      <el-button
+        :icon="CopyDocument"
+        @click="copyEndpointUrl"
+      >
+        复制
+      </el-button>
+    </template>
+  </el-input>
+  <div class="form-tip">
+    <el-icon><Link /></el-icon>
+    <span>保存后可在浏览器打开此地址验证指标是否正常返回</span>
+  </div>
+</el-form-item>
+```
+
+**计算属性** — 根据 osType 自动拼接路径：
+
+```typescript
+import { computed } from 'vue'
+import { ElMessage } from 'element-plus'
+import { CopyDocument, Link } from '@element-plus/icons-vue'
+
+/** 计算完整端点 URL */
+const endpointUrl = computed(() => {
+  const ip = form.ip || 'IP'
+  const port = form.exporterPort
+  const path = getMetricsPath(form.osType)
+  return `http://${ip}:${port}${path}`
+})
+
+/** 根据 osType 获取对应的指标端点路径 */
+function getMetricsPath(osType: string): string {
+  switch (osType) {
+    case 'JAVA_ACTUATOR': return '/actuator/prometheus'
+    default:              return '/metrics'
+  }
+}
+
+/** 复制端点 URL 到剪贴板 */
+async function copyEndpointUrl() {
+  if (!form.ip || !form.exporterPort) {
+    ElMessage.warning('请先填写 IP 和端口')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(endpointUrl.value)
+    ElMessage.success('已复制端点地址：' + endpointUrl.value)
+  } catch {
+    // 降级方案
+    const input = document.createElement('input')
+    input.value = endpointUrl.value
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+    ElMessage.success('已复制端点地址')
+  }
 }
 ```
 
-#### 6.2.3 端口说明文字
-
-在端口输入框下方增加 `osType` 相关的提示：
+#### 6.2.4 端点标注 — 不同 osType 显示不同说明
 
 ```html
-<template v-if="form.osType === 'JAVA'">
-  <span class="text-gray-400 text-xs">默认使用应用的 /actuator/prometheus 端点，端口与 server.port 一致</span>
-</template>
+<div class="form-tip text-gray-400 text-xs mt-1">
+  <template v-if="form.osType === 'JAVA_ACTUATOR'">
+    ✅ Actuator 模式：适用于 Spring Boot 项目，端点由应用内置提供
+  </template>
+  <template v-else-if="form.osType === 'JAVA_JMX'">
+    ✅ JMX Exporter 模式：需通过 -javaagent 参数挂载 jmx_prometheus_javaagent.jar
+  </template>
+  <template v-else>
+    📡 标准 Exporter 格式 (node_exporter / windows_exporter / mysqld_exporter)
+  </template>
+</div>
 ```
 
-### 6.3 机器卡片组件（核心变更）
+**效果预览**（编辑已有机器时自动回显）：
 
-[`MachineCard.vue`](web-apex-vue/src/components/monitor/MachineCard.vue) 当前有两种展示模式：
-- **OS 模式**（`osType !== 'MYSQL'`）：CPU/内存/磁盘 进度条 + 网络/负载
-- **MySQL 模式**（`osType === 'MYSQL'`）：连接数/缓冲池/线程
+```
+┌──────────────────────────────────────────────────┐
+│  编辑机器                                         │
+│                                                   │
+│  机器别名    [ 生产-Java服务            ]         │
+│  机器IP      [ 192.168.1.100            ]         │
+│  系统类型    [ Java (Actuator)      ▾  ]         │
+│  Exporter端口 [ 8080                ▾  ]         │
+│  刷新频率(秒) [ 3                    ▾  ]         │
+│                                                   │
+│  端点 URL    ┌─────────────────────────┬──────┐  │
+│              │ http://192.168.1.100:8080/actuator/prometheus │  │  ← 实时计算
+│              └─────────────────────────┴──────┘  │
+│              🔗 保存后可在浏览器打开此地址验证     │
+│              ✅ Actuator 模式：适用于 Spring Boot项目  │
+│                                                   │
+│                              [ 取消 ] [ 确定 ]    │
+└──────────────────────────────────────────────────┘
+```
 
-新增第三种 **JAVA 模式**（`osType === 'JAVA'`）：
+### 6.3 MachineCard — 新增 JAVA 展示模式
+
+[`MachineCard.vue`](web-apex-vue/src/components/monitor/MachineCard.vue) 条件渲染改造：
+
+```html
+<!-- JAVA 模式 (Actuator 或 JMX) -->
+<template v-if="isJavaOsType(machine.osType)">
+  <!-- JAVA 卡片内容 -->
+</template>
+<!-- MySQL 模式 -->
+<template v-else-if="machine.osType === 'MYSQL'">
+  <!-- 现有 MySQL 卡片 -->
+</template>
+<!-- OS 模式 -->
+<template v-else>
+  <!-- 现有 OS 卡片 -->
+</template>
+```
 
 #### 6.3.1 JAVA 卡片布局
 
 ```
-┌─────────────────────────────────────────┐
-│  🟢 Java-生产服务     [ ... ]  ⚙️  🔄  │  ← 顶栏：名称 + 状态指示 + 操作
-│─────────────────────────────────────────│
-│                                         │
-│  堆内存使用                              │
-│  ████████████████░░░░░░  65.2%          │  ← 进度条（el-progress）
-│  已用: 334 MB / 最大: 512 MB            │  ← 具体数值
-│                                         │
-│  ┌──────────┬──────────┬──────────┐    │
-│  │ GC 暂停   │ 活动线程  │ CPU 使用  │    │  ← 三列指标卡片
-│  │ 2.34s    │   89     │  12.5%   │    │
-│  │ (累计)   │ (当前)   │ (进程)   │    │
-│  ├──────────┼──────────┼──────────┤    │
-│  │ HTTP 请求 │ 守护线程  │ 运行时间  │    │
-│  │ 45,231   │   21     │  3d 5h   │    │
-│  │ (累计)   │ (当前)   │ (自启动) │    │
-│  └──────────┴──────────┴──────────┘    │
-│                                         │
-│  💡 定制指标（如果有）                   │
-│  • 指标A = 12.3  • 指标B = 45.6         │
-│                                         │
-│  IP: 192.168.1.100  端口: 8080          │  ← 底部元信息
-│  刷新: 3s                               │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  🟢 生产-Java服务      [ Actuator ]   ⚙️  🔄    │  ← 顶栏 + 模式标签
+│──────────────────────────────────────────────────│
+│                                                   │
+│  堆内存使用                                       │
+│  ████████████████░░░░░░░░  65.2%                 │  ← el-progress
+│  已用 334 MB / 最大 512 MB                        │
+│                                                   │
+│  ┌──────────┬──────────┬──────────┐             │
+│  │ GC 暂停   │ 活动线程  │ CPU 使用  │             │  ← 六宫格
+│  │ 2.34 s   │   89     │  12.5 %  │             │
+│  ├──────────┼──────────┼──────────┤             │
+│  │ HTTP 请求 │ 守护线程  │ 运行时间  │             │
+│  │ 45,231   │   21     │  3d 5h   │             │  ← JMX 下 HTTP/运行时间 显示 N/A
+│  └──────────┴──────────┴──────────┘             │
+│                                                   │
+│  💡 定制指标（如果有）                             │
+│                                                   │
+│  IP: 192.168.1.100  端口: 8080 (Actuator)         │
+│  刷新: 3s                                         │
+└──────────────────────────────────────────────────┘
 ```
 
-#### 6.3.2 模板条件渲染
+#### 6.3.2 模式标签
 
 ```html
-<!-- OS 模式 (Linux/Windows)：CPU + 内存 + 磁盘 + 网络 + 负载 -->
-<template v-if="machine.osType !== 'MYSQL' && machine.osType !== 'JAVA'">
-  <!-- 现有的 OS 卡片内容保持不变 -->
-</template>
-
-<!-- MySQL 模式 -->
-<template v-else-if="machine.osType === 'MYSQL'">
-  <!-- 现有的 MySQL 卡片内容保持不变 -->
-</template>
-
-<!-- JAVA 模式 -->
-<template v-else-if="machine.osType === 'JAVA'">
-  <div class="java-metrics">
-    <!-- 堆内存进度条 -->
-    <div class="metric-row">
-      <span class="metric-label">堆内存使用</span>
-      <el-progress
-        :percentage="data.jvmHeapUsage"
-        :color="heapColor(data.jvmHeapUsage)"
-        :stroke-width="8"
-      />
-      <span class="metric-text">{{ heapText }}</span>
-    </div>
-
-    <!-- 六宫格指标 -->
-    <div class="java-grid">
-      <div class="java-cell">
-        <span class="cell-label">GC 暂停</span>
-        <span class="cell-value">{{ formatSeconds(data.jvmGcPauseSeconds) }}</span>
-        <span class="cell-sub">累计</span>
-      </div>
-      <div class="java-cell">
-        <span class="cell-label">活动线程</span>
-        <span class="cell-value">{{ data.jvmThreadCount }}</span>
-        <span class="cell-sub">当前</span>
-      </div>
-      <div class="java-cell">
-        <span class="cell-label">CPU 使用</span>
-        <span class="cell-value">{{ data.processCpuUsage.toFixed(1) }}%</span>
-        <span class="cell-sub">进程</span>
-      </div>
-      <div class="java-cell">
-        <span class="cell-label">HTTP 请求</span>
-        <span class="cell-value">{{ formatNumber(data.httpRequestCount) }}</span>
-        <span class="cell-sub">累计</span>
-      </div>
-      <div class="java-cell">
-        <span class="cell-label">守护线程</span>
-        <span class="cell-value">{{ data.jvmDaemonThreadCount }}</span>
-        <span class="cell-sub">当前</span>
-      </div>
-      <div class="java-cell">
-        <span class="cell-label">运行时间</span>
-        <span class="cell-value">{{ formatUptime(data.appUptimeSeconds) }}</span>
-        <span class="cell-sub">自启动</span>
-      </div>
-    </div>
-  </div>
-</template>
+<el-tag v-if="isActuatorMode(machine.osType)" size="small">Actuator</el-tag>
+<el-tag v-else-if="machine.osType === 'JAVA_JMX'" size="small" type="success">JMX Exporter</el-tag>
 ```
 
-#### 6.3.3 辅助方法
+#### 6.3.3 Actuator 独有指标降级显示
+
+```html
+<!-- HTTP 请求数 -->
+<span class="cell-value">
+  {{ isActuatorMode(machine.osType)
+      ? formatNumber(data.httpRequestCount)
+      : 'N/A' }}
+</span>
+
+<!-- 运行时间 -->
+<span class="cell-value">
+  {{ isActuatorMode(machine.osType)
+      ? formatUptime(data.appUptimeSeconds)
+      : 'N/A' }}
+</span>
+```
+
+#### 6.3.4 辅助函数
 
 ```typescript
-// 堆内存颜色（>80% 红，>60% 橙，正常绿）
 function heapColor(usage: number): string {
-  if (usage > 80) return '#F56C6C'
-  if (usage > 60) return '#E6A23C'
-  return '#67C23A'
+  if (usage > 80) return '#F56C6C'   // 红色
+  if (usage > 60) return '#E6A23C'   // 橙色
+  return '#67C23A'                    // 绿色
 }
 
-// 格式化秒数为人类可读
 function formatSeconds(s: number): string {
-  if (s < 60) return s.toFixed(2) + 's'
-  if (s < 3600) return (s / 60).toFixed(1) + 'min'
-  return (s / 3600).toFixed(1) + 'h'
+  if (s <= 0) return 'N/A'
+  if (s < 60) return s.toFixed(2) + ' s'
+  if (s < 3600) return (s / 60).toFixed(1) + ' min'
+  return (s / 3600).toFixed(1) + ' h'
 }
 
-// 格式化大数字
 function formatNumber(n: number): string {
+  if (n <= 0) return 'N/A'
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
   if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
   return String(Math.round(n))
 }
 
-// 格式化运行时间
 function formatUptime(s: number): string {
+  if (s <= 0) return 'N/A'
   const d = Math.floor(s / 86400)
   const h = Math.floor((s % 86400) / 3600)
-  if (d > 0) return `${d}d ${h}h`
-  if (h > 0) return `${h}h ${Math.floor((s % 3600) / 60)}m`
-  return `${Math.floor(s / 60)}m`
+  if (d > 0) return d + 'd ' + h + 'h'
+  if (h > 0) return h + 'h ' + Math.floor((s % 3600) / 60) + 'm'
+  return Math.floor(s / 60) + 'm'
 }
 ```
 
-#### 6.3.4 实时查询适配
+### 6.4 API 层：无需修改
 
-JAVA 机器的 `realtime` 数据获取方式与 OS/MYSQL 完全一致：前端通过 `getRealtimeMetrics(machineId)` 调用，后端根据 `osType` 自动分流到 JAVA 解析器。前端卡片中同样按 `refreshInterval` 频率轮询。
-
-#### 6.3.5 详情弹窗适配
-
-点击 JAVA 卡片的 "详情" 按钮，打开 `MonitorScanDialog`，展示从 `/actuator/prometheus` 获取的全量 JVM 指标（`getFullMetrics` + 分类），用户可定制感兴趣的指标到卡片上显示。
+[`web-apex-vue/src/api/monitor.ts`](web-apex-vue/src/api/monitor.ts) 无需任何改动。`addMachine`、`updateMachine` 等方法直接透传 `osType` 字符串。
 
 ---
 
-## 7. 实施步骤（推荐顺序）
+## 7. 实施步骤
 
-| 步骤 | 内容 | 预估工作量 | 依赖 |
-|------|------|-----------|------|
-| **Step 1** | Flyway 迁移 `V11__add_java_os_type.sql` | 5 分钟 | 无 |
-| **Step 2** | `MonitorMachine.java` 注释更新 | 1 分钟 | Step 1 |
-| **Step 3** | `MetricDictionary.java` 新增 JVM 前缀规则 + 中文翻译 | 20 分钟 | 无 |
-| **Step 4** | `MonitorRealtimeVO.java` 新增 JAVA 字段 | 5 分钟 | 无 |
-| **Step 5** | `MonitorService.java` 新增 JAVA 分支 + JVM 解析方法 | 30 分钟 | Step 3, 4 |
-| **Step 6** | 前端 `monitor.ts` 类型扩展 | 10 分钟 | Step 4 |
-| **Step 7** | 前端 `MachineFormDialog.vue` 新增 JAVA 选项 | 10 分钟 | Step 6 |
-| **Step 8** | 前端 `MachineCard.vue` 新增 JAVA 展示模式 | 45 分钟 | Step 6, 7 |
-| **Step 9** | 联调测试（本地启动 → 添加 JAVA 机器 → 验证卡片展示） | 20 分钟 | Step 1-8 |
-
-> 总预估工作量：约 2.5 小时
+| 步骤 | 内容 | 依赖 |
+|------|------|------|
+| **Step 1** | Flyway 迁移 — 扩展 os_type 注释 | 无 |
+| **Step 2a** | `MetricDictionary.java` — 拆分 ENTRIES 块为 4 个 `Metric*Dict.java` 子文件 | 无 |
+| **Step 2b** | `MetricDictionary.java` — PREFIX_RULES 新增 JVM 归类 + 聚合入口调用 `MetricJvmDict.contribute()` | Step 2a |
+| **Step 2c** | 新建 `MetricJvmDict.java` — JVM 指标中文翻译（~40 行） | Step 2a |
+| **Step 3** | `MonitorRealtimeVO.java` — 新增 8 个 JAVA 专用字段 | 无 |
+| **Step 4** | `MonitorService.java` — `fetchMetrics()` URL 自适应 + JAVA 分支 + 8 个解析方法 | Step 2b, 3 |
+| **Step 5** | 前端 `monitor.ts` — 类型扩展 + 工具函数 | Step 3 |
+| **Step 6** | 前端 `MachineFormDialog.vue` — 新增两个 JAVA 选项 + 端口联动 + 端点 URL 实时预览 + 一键复制 | Step 5 |
+| **Step 7** | 前端 `MachineCard.vue` — 新增 JAVA 展示模式 | Step 5 |
+| **Step 8** | 联调测试：本机 Actuator 模式 | Step 1-7 |
+| **Step 9** | 联调测试：JMX Exporter 模式 | Step 1-7 |
 
 ---
 
 ## 8. 技术要点与注意事项
 
-### 8.1 网络可达性
+### 8.1 URL 构造对照表
 
-- JAVA 类型机器的 `exporterPort` 填写**应用服务端口**（通常 8080），因为 Actuator 端点与应用共享端口
-- `fetchMetrics()` 方法构造 URL 为 `http://{ip}:{exporterPort}/actuator/prometheus`
-- 如果被测 Java 应用运行在独立管理端口（如 `management.server.port=8081`），则 `exporterPort` 应填写管理端口
+| osType | 默认端口 | URL |
+|--------|---------|-----|
+| `JAVA_ACTUATOR` | 8080 | `http://IP:8080/actuator/prometheus` |
+| `JAVA_JMX` | 9104 | `http://IP:9104/metrics` |
+| WINDOWS | 9182 | `http://IP:9182/metrics` |
+| LINUX | 9100 | `http://IP:9100/metrics` |
+| MYSQL | 9104 | `http://IP:9104/metrics` |
 
-### 8.2 指标名称差异
+### 8.2 Actuator 独有指标
 
-不同版本的 Spring Boot / Micrometer 可能产生略有不同的指标名（如旧版 `jvm_memory_used_bytes` vs 新版可能带更多标签）。解析时应使用 `extractMetricValue` 的简单行匹配，只按指标名匹配，忽略标签差异。
+| 指标 | `JAVA_ACTUATOR` | `JAVA_JMX` | 前端处理 |
+|------|----------------|-----------|---------|
+| `http_server_requests_seconds_count` | ✅ 有值 | ❌ 返回 0 | 显示 "N/A" |
+| `application_started_time_seconds` | ✅ 有值 | ❌ 返回 0 | 显示 "N/A" |
+| 其余 6 项 JVM 指标 | ✅ | ✅ | 正常显示 |
 
-### 8.3 累加型指标（Counter）
+### 8.3 JMX Exporter 部署
 
-GC 暂停秒数 (`jvm_gc_pause_seconds_sum`) 和 HTTP 请求数 (`http_server_requests_seconds_count`) 是 Counter 类型，值会持续累加。在实时卡片展示中直接显示累计值即可；在未来的走势图场景中需要做增量计算（`rate()`）。
+别人的 Java 应用只需启动参数中加一行：
 
-### 8.4 零值兜底
+```bash
+java -javaagent:jmx_prometheus_javaagent.jar=9104:config.yaml -jar app.jar
+```
 
-参考 MySQL 扩展模式，所有 JAVA 专用字段在非 JAVA 类型时返回 0 或 -1，前端通过 `osType === 'JAVA'` 条件渲染，不会显示无意义的数据。
+然后在监控系统添加机器：`osType=JAVA_JMX`, `exporterPort=9104`。
 
-### 8.5 采样任务兼容
+### 8.4 向后兼容
 
-`MonitorSampleScheduler` 的 `collectSample()` 方法中已有 `"MYSQL".equals(osType)` 等分支判断。新增 JAVA 后，需在此处增加对 JAVA 系统指标（堆内存等）的采集逻辑，或将 JAVA 指标映射到通用 `metricIds` 体系中。
+现有 `WINDOWS`、`LINUX`、`MYSQL` 类型的机器行为完全不变。`fetchMetrics()` 中只有 `JAVA_ACTUATOR` 走 `/actuator/prometheus`，其他全部走 `/metrics`。
 
-### 8.6 安全性
+### 8.5 采样任务适配
 
-`/actuator/prometheus` 端点默认无需认证即可访问。如果生产环境引入了 Spring Security，需确保该端点对监控消费者（本应用自身）开放。
+`MonitorSampleScheduler.collectSample()` 中已有 osType 分支判断，新增 `JAVA_ACTUATOR` / `JAVA_JMX` 后按需扩展系统指标映射即可。
 
 ---
 
 ## 9. 测试要点
 
-1. **基本连通性**：添加 IP 为本机 `127.0.0.1`、端口 8080 的 JAVA 机器，验证 `fetchMetrics()` 能正常获取数据
-2. **堆内存解析**：验证 `parseJvmHeapUsage()` 返回值在 0-100 之间，且与实际 JVM 堆使用量一致
-3. **GC 指标解析**：验证 GC 暂停秒数和次数能正确提取
-4. **线程指标解析**：验证活动线程数和守护线程数正确
-5. **CPU 指标解析**：验证 `process_cpu_usage` 能正确转换为百分比
-6. **HTTP 指标解析**：发送几次请求后，验证请求计数增加
-7. **前端卡片渲染**：JAVA 模式下正确显示堆内存进度条和六宫格指标
-8. **不可达处理**：停止目标应用后，卡片显示 "无法连接" 状态（复用现有 reachable 逻辑）
-9. **详情弹窗**：JAVA 机器的全量指标浏览弹窗正确显示所有 JVM 指标分类
-10. **采样任务**：创建 JAVA 机器的采样任务，验证历史数据采集正确
+| # | 测试场景 | 验证点 |
+|---|---------|--------|
+| 1 | 添加「Java (Actuator)」本机 127.0.0.1:8080 | 8 项指标全部有值，模式标签显示 "Actuator" |
+| 2 | 添加「Java (JMX Exporter)」模拟 | 前 6 项有值，HTTP 请求和运行时间显示 "N/A"，标签显示 "JMX Exporter" |
+| 3 | 切换下拉选项 | 选 Actuator 默认端口 8080，选 JMX 默认端口 9104 |
+| 4 | 现有 LINUX/WINDOWS/MYSQL 机器 | 行为完全不变 |
+| 5 | Exporter 不可达 | 卡片显示 "无法连接" |
+| 6 | 详情弹窗 | JAVA 机器的全量指标分类展示正确 |
+| 7 | 采样任务 | JAVA 机器的采样历史数据正确 |
 
 ---
 
 ## 10. 总结
 
-本次变更完全遵循现有架构的扩展模式（与 MYSQL 接入保持一致），核心变更集中在 **一个 Service 方法** (`MonitorService.java` 新增 JAVA 解析器) 和 **两个前端组件** (`MachineFormDialog.vue` + `MachineCard.vue`)。后端 Controller、Mapper、Scheduler 均无需改动，前端 API 层和类型定义只需追加字段。
+```
+┌──────────────────────────────┐
+│  用户只需下拉选一个：         │
+│  ● Java (Actuator)           │  → 自动: 端口 8080, 路径 /actuator/prometheus
+│  ● Java (JMX Exporter)       │  → 自动: 端口 9104, 路径 /metrics
+│                              │
+│  剩下的 IP 和端口（如需覆盖）  │
+│  跟 Linux/Windows 一样填即可  │
+└──────────────────────────────┘
+```
 
-完成后的效果：在容量监控页面添加一台 "Java 应用" 类型的机器，输入目标 IP 和端口，即可像监控 Windows/Linux 一样实时查看 JVM 的堆内存、GC、线程、CPU 等核心运行时指标。
+<strong>零额外字段、零新表、零新列</strong>。两个子类型完全由后端 switch 分支和前端下拉选项承载，解析代码 100% 复用，是当前架构下最简洁的扩展方式。
