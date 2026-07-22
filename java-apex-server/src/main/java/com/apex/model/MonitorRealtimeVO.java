@@ -25,6 +25,15 @@ public record MonitorRealtimeVO(
         double mysqlBufferPoolHitRate,
         long mysqlSlowQueries,
         long mysqlQueriesTotal,
-        long mysqlThreadsRunning
+        long mysqlThreadsRunning,
+        // JAVA 专用字段（非 JAVA 时均为 0）
+        double jvmHeapUsage,          // 堆内存使用率 0-100
+        double jvmGcPauseSeconds,     // GC 累计暂停秒数
+        double jvmGcCount,            // GC 累计次数
+        double jvmThreadCount,        // 活动线程数
+        double jvmDaemonThreadCount,  // 守护线程数
+        double processCpuUsage,       // 进程 CPU 使用率 0-100
+        double httpRequestCount,      // HTTP 累计请求数（仅 Actuator）
+        double appUptimeSeconds       // 应用启动时间秒（仅 Actuator）
 ) {}
 

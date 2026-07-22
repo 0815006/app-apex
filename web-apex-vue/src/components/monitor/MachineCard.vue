@@ -37,7 +37,7 @@
     </div>
 
     <!-- 核心指标区（OS 模式：CPU/内存/磁盘） -->
-    <div v-if="realtime && machine.osType !== 'MYSQL'" class="core-metrics">
+    <div v-if="realtime && machine.osType !== 'MYSQL' && !isJavaOsType" class="core-metrics">
       <div class="core-row">
         <div class="core-item">
           <span class="core-label">CPU</span>
@@ -76,6 +76,40 @@
         <span v-if="machine.osType === 'LINUX' && realtime.loadAvg1 > 0" class="core-sub-item">
           负载 {{ realtime.loadAvg1.toFixed(1) }}
         </span>
+      </div>
+    </div>
+
+    <!-- 核心指标区（JAVA 模式：堆内存 / GC / 线程） -->
+    <div v-if="realtime && isJavaOsType" class="core-metrics java-metrics">
+      <div class="core-item">
+        <span class="core-label">堆</span>
+        <el-progress
+          :percentage="clampPercent(realtime.jvmHeapUsage)"
+          :color="jvmHeapColor"
+          :stroke-width="8"
+          :show-text="false"
+        />
+        <span class="core-value" :style="{ color: jvmHeapColor }">{{ realtime.jvmHeapUsage.toFixed(1) }}%</span>
+      </div>
+      <div class="core-item">
+        <span class="core-label">进程</span>
+        <el-progress
+          :percentage="clampPercent(realtime.processCpuUsage)"
+          :color="jvmProcessCpuColor"
+          :stroke-width="8"
+          :show-text="false"
+        />
+        <span class="core-value" :style="{ color: jvmProcessCpuColor }">{{ realtime.processCpuUsage.toFixed(1) }}%</span>
+      </div>
+      <div class="core-item">
+        <span class="core-label">线程</span>
+        <span class="core-value" style="color: #303133;">{{ realtime.jvmThreadCount }}</span>
+      </div>
+      <div class="core-sub">
+        <span class="core-sub-item">🧹 GC {{ realtime.jvmGcPauseSeconds.toFixed(2) }}s / {{ formatCount(realtime.jvmGcCount) }}次</span>
+        <span v-if="realtime.jvmDaemonThreadCount > 0" class="core-sub-item">👤 守护 {{ realtime.jvmDaemonThreadCount }}</span>
+        <span v-if="realtime.httpRequestCount > 0" class="core-sub-item">🌐 请求 {{ formatCount(realtime.httpRequestCount) }}</span>
+        <span v-if="realtime.appUptimeSeconds > 0" class="core-sub-item">⏱ {{ formatUptime(realtime.appUptimeSeconds) }}</span>
       </div>
     </div>
 
@@ -218,6 +252,26 @@ const memColor = computed(() => {
 const diskColor = computed(() => {
   if (!realtime.value) return '#E6E6E6'
   const v = realtime.value.diskUsage
+  if (v >= 90) return '#F56C6C'
+  if (v >= 70) return '#E6A23C'
+  return '#67C23A'
+})
+
+const isJavaOsType = computed(() =>
+  props.machine.osType === 'JAVA_ACTUATOR' || props.machine.osType === 'JAVA_JMX'
+)
+
+const jvmHeapColor = computed(() => {
+  if (!realtime.value) return '#E6E6E6'
+  const v = realtime.value.jvmHeapUsage
+  if (v >= 90) return '#F56C6C'
+  if (v >= 70) return '#E6A23C'
+  return '#67C23A'
+})
+
+const jvmProcessCpuColor = computed(() => {
+  if (!realtime.value) return '#E6E6E6'
+  const v = realtime.value.processCpuUsage
   if (v >= 90) return '#F56C6C'
   if (v >= 70) return '#E6A23C'
   return '#67C23A'

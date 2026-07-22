@@ -8,7 +8,7 @@ export interface MonitorMachine {
   id: number
   machineName: string
   ip: string
-  osType: 'WINDOWS' | 'LINUX' | 'MYSQL'
+  osType: 'WINDOWS' | 'LINUX' | 'MYSQL' | 'JAVA_ACTUATOR' | 'JAVA_JMX'
   exporterPort: number
   refreshInterval: number
   isEnabled: boolean
@@ -51,6 +51,22 @@ export interface MonitorRealtime {
   mysqlQueriesTotal: number
   /** MySQL 专用：活跃线程数（非 MySQL 时为 0） */
   mysqlThreadsRunning: number
+  /** JAVA 专用：堆内存使用率 0-100（非 JAVA 时为 0） */
+  jvmHeapUsage: number
+  /** JAVA 专用：GC 累计暂停秒数（非 JAVA 时为 0） */
+  jvmGcPauseSeconds: number
+  /** JAVA 专用：GC 累计次数（非 JAVA 时为 0） */
+  jvmGcCount: number
+  /** JAVA 专用：活动线程数（非 JAVA 时为 0） */
+  jvmThreadCount: number
+  /** JAVA 专用：守护线程数（非 JAVA 时为 0） */
+  jvmDaemonThreadCount: number
+  /** JAVA 专用：进程 CPU 使用率 0-100（非 JAVA 时为 0） */
+  processCpuUsage: number
+  /** JAVA 专用：HTTP 累计请求数（仅 Actuator，JMX 为 0） */
+  httpRequestCount: number
+  /** JAVA 专用：应用启动时间秒（仅 Actuator，JMX 为 0） */
+  appUptimeSeconds: number
 }
 
 /** 定制指标在卡片上的实时状态 */

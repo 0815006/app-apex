@@ -20,10 +20,12 @@
         <el-input v-model="form.ip" placeholder="如：192.168.1.100" maxlength="50" />
       </el-form-item>
       <el-form-item label="系统类型" prop="osType">
-        <el-select v-model="form.osType" placeholder="请选择系统类型" style="width: 100%">
+        <el-select v-model="form.osType" placeholder="请选择系统类型" style="width: 100%" @change="onOsTypeChange">
           <el-option label="Linux" value="LINUX" />
           <el-option label="Windows" value="WINDOWS" />
           <el-option label="MySQL" value="MYSQL" />
+          <el-option label="Java (Actuator)" value="JAVA_ACTUATOR" />
+          <el-option label="Java (JMX Exporter)" value="JAVA_JMX" />
         </el-select>
       </el-form-item>
       <el-form-item label="Exporter 端口" prop="exporterPort">
@@ -42,6 +44,17 @@
           style="width: 100%"
         />
       </el-form-item>
+      <!-- 端点 URL 实时预览（仅 JAVA 类型显示） -->
+      <el-form-item v-if="isJavaOsType" label="端点 URL">
+        <div style="display: flex; gap: 6px; width: 100%;">
+          <el-input
+            :model-value="computedMetricsUrl"
+            readonly
+            style="flex: 1;"
+          />
+          <el-button @click="copyUrl" :icon="CopyDocument" size="small" title="复制 URL" />
+        </div>
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
@@ -51,8 +64,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
+import { ref, reactive, watch, computed } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { CopyDocument } from '@element-plus/icons-vue'
 import type { MonitorMachine, MonitorMachineForm } from '@/types/monitor'
 
 const props = defineProps<{
@@ -73,11 +87,20 @@ const isEdit = ref(false)
 const submitting = ref(false)
 const formRef = ref<FormInstance>()
 
+/** 各 osType 默认端口映射 */
+const DEFAULT_PORTS: Record<string, number> = {
+  LINUX: 9100,
+  WINDOWS: 9182,
+  MYSQL: 9104,
+  JAVA_ACTUATOR: 8080,
+  JAVA_JMX: 9104,
+}
+
 const defaultForm = (): MonitorMachineForm => ({
   machineName: '',
   ip: '',
   osType: 'LINUX',
-  exporterPort: 9100,
+  exporterPort: DEFAULT_PORTS['LINUX'],
   refreshInterval: 3,
 })
 
@@ -106,6 +129,38 @@ watch(visible, (v) => {
     Object.assign(form, defaultForm())
   }
 })
+
+/** 当前是否为 JAVA 类型 */
+const isJavaOsType = computed(() =>
+  form.osType === 'JAVA_ACTUATOR' || form.osType === 'JAVA_JMX'
+)
+
+/** 计算端点 URL（实时预览） */
+const computedMetricsUrl = computed(() => {
+  if (!form.ip || !form.exporterPort) return ''
+  const path = form.osType === 'JAVA_ACTUATOR' ? '/actuator/prometheus' : '/metrics'
+  return `http://${form.ip}:${form.exporterPort}${path}`
+})
+
+/** 一键复制端点 URL */
+async function copyUrl() {
+  if (!computedMetricsUrl.value) return
+  try {
+    await navigator.clipboard.writeText(computedMetricsUrl.value)
+    ElMessage.success('已复制')
+  } catch {
+    ElMessage.warning('复制失败，请手动复制')
+  }
+}
+
+/** osType 变更时自动切换默认端口（仅新建模式） */
+function onOsTypeChange(newType: string) {
+  if (isEdit.value) return // 编辑模式不改端口
+  const defaultPort = DEFAULT_PORTS[newType]
+  if (defaultPort !== undefined) {
+    form.exporterPort = defaultPort
+  }
+}
 
 function resetForm() {
   formRef.value?.resetFields()

@@ -33,7 +33,8 @@ public final class MetricDictionary {
         PORT("port", "端口"),
         PROCESS("process", "进程"),
         SYSTEM("system", "系统"),
-        RUNTIME("runtime", "Go运行时"),
+        GC("gc", "GC"),
+        RUNTIME("runtime", "运行时"),
         CONNECTION("connection", "连接"),
         QUERY("query", "查询"),
         INNODB("innodb", "InnoDB"),
@@ -56,9 +57,9 @@ public final class MetricDictionary {
 
         /** 按业务约定顺序返回所有分类 key。 */
         public static List<String> orderedKeys() {
-            return List.of("cpu", "memory", "disk", "network", "service", "port", "process", "system",
-                    "connection", "query", "innodb", "thread", "table_op", "handler", "config",
-                    "runtime", "other");
+            return List.of("cpu", "memory", "disk", "network", "gc", "service", "port", "process",
+                    "system", "connection", "query", "innodb", "thread", "table_op", "handler",
+                    "config", "runtime", "other");
         }
 
         /** key → 枚举 反向查找。 */
@@ -185,6 +186,26 @@ public final class MetricDictionary {
         PREFIX_RULES.put("mysql_version_",                      MetricCategory.SYSTEM);
         PREFIX_RULES.put("mysql_info_schema_",                  MetricCategory.INNODB);
 
+        // ===== JVM 指标归类（Actuator / JMX Exporter 通用） =====
+        PREFIX_RULES.put("jvm_memory_",             MetricCategory.MEMORY);
+        PREFIX_RULES.put("jvm_buffer_",             MetricCategory.MEMORY);
+        PREFIX_RULES.put("jvm_gc_",                 MetricCategory.GC);
+        PREFIX_RULES.put("jvm_threads_",            MetricCategory.THREAD);
+        PREFIX_RULES.put("jvm_classes_",            MetricCategory.RUNTIME);
+        PREFIX_RULES.put("jvm_info",                MetricCategory.RUNTIME);
+        PREFIX_RULES.put("jvm_runtime_",            MetricCategory.RUNTIME);
+        PREFIX_RULES.put("http_server_requests_",   MetricCategory.SERVICE);
+        PREFIX_RULES.put("application_",            MetricCategory.RUNTIME);
+        PREFIX_RULES.put("tomcat_",                 MetricCategory.SERVICE);
+        PREFIX_RULES.put("executor_",               MetricCategory.SERVICE);
+        PREFIX_RULES.put("hikaricp_",               MetricCategory.CONNECTION);
+        PREFIX_RULES.put("jdbc_",                   MetricCategory.CONNECTION);
+        PREFIX_RULES.put("tasks_scheduled_",        MetricCategory.SERVICE);
+        PREFIX_RULES.put("logback_",                MetricCategory.RUNTIME);
+        PREFIX_RULES.put("jvm_compilation_",        MetricCategory.RUNTIME);
+        PREFIX_RULES.put("system_",                 MetricCategory.SYSTEM);
+        PREFIX_RULES.put("disk_",                   MetricCategory.SYSTEM);
+
         // System (node_ 兜底要在最后)
         PREFIX_RULES.put("windows_os_",           MetricCategory.SYSTEM);
         PREFIX_RULES.put("windows_system_",       MetricCategory.SYSTEM);
@@ -196,7 +217,7 @@ public final class MetricDictionary {
 
         // Runtime
         PREFIX_RULES.put("go_",                   MetricCategory.RUNTIME);
-        PREFIX_RULES.put("process_",              MetricCategory.RUNTIME);
+        PREFIX_RULES.put("process_",              MetricCategory.SYSTEM);  // JVM 语境下 process_cpu_usage 等更像系统资源而非 Go 运行时
     }
 
     /**
@@ -228,6 +249,7 @@ public final class MetricDictionary {
     //   - node_*     → 编辑 MetricLinuxDict.java
     //   - windows_*  → 编辑 MetricWinDict.java
     //   - mysql_*    → 编辑 MetricMysqlDict.java
+    //   - jvm_* / http_* / application_* → 编辑 MetricJvmDict.java
     //   - go_* / process_* / promhttp_* → 在本文件静态块末尾追加
     // =============================================
 
@@ -246,7 +268,10 @@ public final class MetricDictionary {
         // 3. MySQL 指标 (mysqld_exporter)
         MetricMysqlDict.contribute(list);
 
-        // 4. 跨平台通用指标 (Go Runtime / Process / Exporter 自监控)
+        // 4. JVM 指标 (Actuator / JMX Exporter 通用)
+        MetricJvmDict.contribute(list);
+
+        // 5. 跨平台通用指标 (Go Runtime / Process / Exporter 自监控)
         //    所有 Prometheus exporter 均由 Go 编写，以下 go_* / process_* / promhttp_* 指标在各平台通用
         entry(list, "go_build_info",                         "Go构建信息");
         entry(list, "go_gc_duration_seconds",                "GC耗时(秒)");

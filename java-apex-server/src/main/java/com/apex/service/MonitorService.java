@@ -143,7 +143,7 @@ public class MonitorService {
      * 拉取 Exporter 返回的 Prometheus Text 格式指标文本。
      */
     public String fetchMetrics(MonitorMachine machine) throws IOException, InterruptedException {
-        String url = String.format("http://%s:%d/metrics", machine.getIp(), machine.getExporterPort());
+        String url = buildMetricsUrl(machine);
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(10))
@@ -154,6 +154,18 @@ public class MonitorService {
             throw new IOException("Exporter returned HTTP " + response.statusCode());
         }
         return response.body();
+    }
+
+    /**
+     * 根据机器 osType 自动选择 Exporter 端点路径。
+     * JAVA_ACTUATOR → /actuator/prometheus，其余 → /metrics。
+     */
+    private String buildMetricsUrl(MonitorMachine machine) {
+        String path = switch (machine.getOsType().toUpperCase()) {
+            case "JAVA_ACTUATOR" -> "/actuator/prometheus";
+            default -> "/metrics";
+        };
+        return String.format("http://%s:%d%s", machine.getIp(), machine.getExporterPort(), path);
     }
 
     // =============================================
@@ -652,13 +664,31 @@ public class MonitorService {
                         matched));
             }
 
+            if ("JAVA_ACTUATOR".equalsIgnoreCase(osType) || "JAVA_JMX".equalsIgnoreCase(osType)) {
+                return new MonitorRealtimeVO(machineId, true, null,
+                        -1, -1, -1,
+                        0L, 0L, 0L,
+                        0.0, 0.0, 0.0,
+                        portStatusList,
+                        0L, 0L, 0.0, 0L, 0L, 0L,
+                        parseJvmHeapUsage(metricsText),
+                        parseJvmGcPauseSeconds(metricsText),
+                        parseJvmGcCount(metricsText),
+                        parseJvmThreadCount(metricsText),
+                        parseJvmDaemonThreadCount(metricsText),
+                        parseProcessCpuUsage(metricsText),
+                        parseHttpRequestCount(metricsText),
+                        parseAppUptime(metricsText));
+            }
+
             return new MonitorRealtimeVO(machineId, true, null,
                     cpu, mem, disk,
                     net[0], net[1], uptime,
                     load[0], load[1], load[2],
                     portStatusList,
                     mysqlConnections, mysqlMaxConnections, mysqlBufferPoolHitRate,
-                    mysqlSlowQueries, mysqlQueriesTotal, mysqlThreadsRunning);
+                    mysqlSlowQueries, mysqlQueriesTotal, mysqlThreadsRunning,
+                    0, 0, 0, 0, 0, 0, 0, 0);
 
         } catch (Exception e) {
             log.warn("无法连接 Exporter {}:{} — {}", machine.getIp(), machine.getExporterPort(), e.getMessage());
@@ -674,7 +704,8 @@ public class MonitorService {
                     0, 0, 0,
                     portStatusList,
                     0, 0, 0,
-                    0, 0, 0);
+                    0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 
@@ -891,5 +922,44 @@ public class MonitorService {
             return Double.parseDouble(m.group(1));
         }
         return 0;
+    }
+
+    // =============================================
+    // JVM 指标解析方法（Actuator / JMX Exporter 通用）
+    // =============================================
+
+    private double parseJvmHeapUsage(String text) {
+        double used = extractLabeledMetricValue(text, "jvm_memory_used_bytes", "area", "heap");
+        double max = extractLabeledMetricValue(text, "jvm_memory_max_bytes", "area", "heap");
+        if (max <= 0) return 0;
+        return (used / max) * 100;
+    }
+
+    private double parseJvmGcPauseSeconds(String text) {
+        return extractMetricValue(text, "jvm_gc_pause_seconds_sum");
+    }
+
+    private double parseJvmGcCount(String text) {
+        return extractMetricValue(text, "jvm_gc_pause_seconds_count");
+    }
+
+    private double parseJvmThreadCount(String text) {
+        return extractMetricValue(text, "jvm_threads_live_threads");
+    }
+
+    private double parseJvmDaemonThreadCount(String text) {
+        return extractMetricValue(text, "jvm_threads_daemon_threads");
+    }
+
+    private double parseProcessCpuUsage(String text) {
+        return extractMetricValue(text, "process_cpu_usage") * 100;
+    }
+
+    private double parseHttpRequestCount(String text) {
+        return extractMetricValue(text, "http_server_requests_seconds_count");
+    }
+
+    private double parseAppUptime(String text) {
+        return extractMetricValue(text, "application_started_time_seconds");
     }
 }

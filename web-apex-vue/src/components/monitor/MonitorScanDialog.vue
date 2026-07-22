@@ -9,7 +9,7 @@
     class="scan-dialog"
   >
     <!-- 顶栏：核心实时指标（OS 模式） -->
-    <div class="scan-header" v-if="headerReachable != null && machine?.osType !== 'MYSQL'">
+    <div class="scan-header" v-if="headerReachable != null && machine?.osType !== 'MYSQL' && !isScanJavaOsType">
       <span v-if="headerReachable" class="header-metrics">
         <span class="h-cpu">CPU: {{ headerCpu.toFixed(1) }}%</span>
         <span class="h-sep">|</span>
@@ -20,6 +20,26 @@
         <span class="h-net">↙{{ formatBytes(headerNetRx) }} ↗{{ formatBytes(headerNetTx) }}</span>
         <span class="h-sep">|</span>
         <span class="h-uptime">{{ formatUptime(headerUptime) }}</span>
+      </span>
+      <span v-else class="h-error">⚠️ {{ headerErrorMsg || '无法连接 Exporter' }}</span>
+    </div>
+
+    <!-- 顶栏：核心实时指标（JAVA 模式） -->
+    <div class="scan-header java-header" v-if="headerReachable != null && isScanJavaOsType">
+      <span v-if="headerReachable" class="header-metrics">
+        <span class="h-heap">
+          堆: <strong>{{ headerJvmHeapUsage.toFixed(1) }}%</strong>
+        </span>
+        <span class="h-sep">|</span>
+        <span class="h-cpu">进程: {{ headerProcessCpu.toFixed(1) }}%</span>
+        <span class="h-sep">|</span>
+        <span class="h-thread">线程: {{ headerJvmThreadCount }}</span>
+        <span class="h-sep">|</span>
+        <span class="h-gc">🧹 GC {{ headerJvmGcPause.toFixed(2) }}s / {{ formatCount(headerJvmGcCount) }}次</span>
+        <span v-if="headerHttpRequestCount > 0" class="h-sep">|</span>
+        <span v-if="headerHttpRequestCount > 0" class="h-qps">🌐 请求 {{ formatCount(headerHttpRequestCount) }}</span>
+        <span v-if="headerAppUptime > 0" class="h-sep">|</span>
+        <span v-if="headerAppUptime > 0" class="h-uptime">⏱ {{ formatUptime(headerAppUptime) }}</span>
       </span>
       <span v-else class="h-error">⚠️ {{ headerErrorMsg || '无法连接 Exporter' }}</span>
     </div>
@@ -183,6 +203,7 @@ function getCategoryIcon(key: string): string {
     memory: '🧠',
     disk: '💾',
     network: '🌐',
+    gc: '🧹',
     service: '⚙️',
     port: '🔌',
     process: '🏭',
@@ -236,6 +257,20 @@ const headerMysqlSlowQueries = ref(0)
 const headerMysqlQueriesTotal = ref(0)
 const headerMysqlThreadsRunning = ref(0)
 
+// 顶栏实时指标（JAVA 专用）
+const headerJvmHeapUsage = ref(0)
+const headerProcessCpu = ref(0)
+const headerJvmThreadCount = ref(0)
+const headerJvmGcPause = ref(0)
+const headerJvmGcCount = ref(0)
+const headerHttpRequestCount = ref(0)
+const headerAppUptime = ref(0)
+
+/** JAVA osType 判定 */
+const isScanJavaOsType = computed(() =>
+  props.machine?.osType === 'JAVA_ACTUATOR' || props.machine?.osType === 'JAVA_JMX'
+)
+
 /** MySQL 连接数百分比 */
 const mysqlConnPct = computed(() => {
   if (headerMysqlMaxConnections.value === 0) return 0
@@ -275,6 +310,14 @@ async function loadData() {
       headerMysqlSlowQueries.value = realtime.mysqlSlowQueries
       headerMysqlQueriesTotal.value = realtime.mysqlQueriesTotal
       headerMysqlThreadsRunning.value = realtime.mysqlThreadsRunning
+      // JAVA 专用字段
+      headerJvmHeapUsage.value = realtime.jvmHeapUsage
+      headerProcessCpu.value = realtime.processCpuUsage
+      headerJvmThreadCount.value = realtime.jvmThreadCount
+      headerJvmGcPause.value = realtime.jvmGcPauseSeconds
+      headerJvmGcCount.value = realtime.jvmGcCount
+      headerHttpRequestCount.value = realtime.httpRequestCount
+      headerAppUptime.value = realtime.appUptimeSeconds
     } else {
       headerReachable.value = metrics.reachable
       headerErrorMsg.value = metrics.errorMsg || ''
