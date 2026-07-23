@@ -151,7 +151,11 @@ public class MonitorService {
                 .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            throw new IOException("Exporter returned HTTP " + response.statusCode());
+            String body = response.body();
+            log.warn("fetchMetrics {} returned HTTP {} body={}", url, response.statusCode(),
+                    body != null ? body.substring(0, Math.min(body.length(), 200)) : "(null)");
+            throw new IOException("Exporter returned HTTP " + response.statusCode() + ": " +
+                    (body != null ? body.substring(0, Math.min(body.length(), 100)) : ""));
         }
         return response.body();
     }
