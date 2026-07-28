@@ -1,8 +1,8 @@
 <template>
   <div class="layout-wrapper">
     <!-- 左侧菜单 -->
-    <aside class="layout-sidebar">
-      <Sidebar />
+    <aside class="layout-sidebar" :class="{ 'layout-sidebar--collapsed': sidebarCollapsed }">
+      <Sidebar v-model="sidebarCollapsed" />
     </aside>
 
     <!-- 顶栏 -->
@@ -23,7 +23,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import Header from './Header.vue'
 import Sidebar from './Sidebar.vue'
@@ -31,6 +31,8 @@ import StatusBar from './StatusBar.vue'
 
 const route = useRoute()
 const isFullHeightRoute = computed(() => route.path.startsWith('/wiki') || route.path.startsWith('/chat'))
+
+const sidebarCollapsed = ref(false)
 </script>
 
 <style scoped>
@@ -41,6 +43,11 @@ const isFullHeightRoute = computed(() => route.path.startsWith('/wiki') || route
   height: 100dvh;
   width: 100%;
   overflow: hidden;
+  transition: grid-template-columns 0.3s ease;
+}
+
+.layout-wrapper:has(.layout-sidebar--collapsed) {
+  grid-template-columns: 64px 1fr; /* 折叠后左侧菜单宽 64px */
 }
 
 .layout-sidebar {
@@ -48,6 +55,7 @@ const isFullHeightRoute = computed(() => route.path.startsWith('/wiki') || route
   grid-column: 1 / 2;
   background-color: #304156;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .layout-header {
