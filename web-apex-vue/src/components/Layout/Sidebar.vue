@@ -133,31 +133,39 @@ const activeMenu = computed(() => route.path)
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #304156;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  background-color: transparent;
+  border: none;
   border-radius: 50%;
   cursor: pointer;
   color: #bfcbd9;
   z-index: 10;
-  transition: opacity 0.25s ease, border-color 0.2s, color 0.2s;
+  transition: opacity 0.25s ease, background-color 0.2s, border 0.2s, color 0.2s;
 }
 
 .sidebar-toggle:hover {
   color: #409eff;
-  border-color: #409eff;
+  background-color: #304156;
+  border: 1px solid #409eff;
 }
 
-/* 折叠态：居中覆盖 Logo 图标，默认隐藏 */
+/* 折叠态：居中覆盖 Logo 图标，默认隐藏，完全不透明 */
 .sidebar-toggle.is-overlay {
   top: 50%;
   left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
-  width: 36px;
-  height: 36px;
-  background-color: rgba(48, 65, 86, 0.92);
+  width: 40px;
+  height: 40px;
+  background-color: #304156;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   opacity: 0;
   pointer-events: none;
+}
+
+.sidebar-toggle.is-overlay:hover {
+  color: #409eff;
+  background-color: #304156;
+  border-color: #409eff;
 }
 
 /* 折叠态：鼠标悬停 Logo 区域时显示 */
